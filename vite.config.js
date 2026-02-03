@@ -1,17 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate', // 更新があったらすぐに新しいのを読み込む設定
       includeAssets: ['favicon.ico', 'apple-touch-icon.png'], // キャッシュする静的ファイル
       manifest: {
-        name: 'My Awesome PWA',
-        short_name: 'PWA App',
-        description: 'React PWA Template',
+        name: 'Shikakeology Logger',
+        short_name: 'Shikake Logger',
+        description: 'Logger App for shikake experiments',
         theme_color: '#ffffff',
         icons: [
           {
