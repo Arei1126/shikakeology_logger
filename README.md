@@ -1,16 +1,66 @@
-# React + Vite
+## Shikakeology Action Logger (仕掛学行動ロガー)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+仕掛学（Shikakeology)に基づく行動観察を、屋外で直感的かつ高速に記録するためのPWA（Progressive Web App）対応ロガーです。
+スマホのタッチ操作に最適化されており、画面を見ずに記録できる「No-Look UI」と、仕掛学の行動モデルに基づくデータ補完機能を搭載しています。
 
-Currently, two official plugins are available:
+## デモ (Demo)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+以下のリンクから、ブラウザ上で実際に動作を試すことができます（スマホ推奨）。
 
-## React Compiler
+[Shikakeology Action Logger を起動する](https://arei1126.github.pages/shikakeology_logger)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 特徴 (Features)
 
-## Expanding the ESLint configuration
+- No-Look UI: 画面を左右（男女）に分割し、フリック方向（上・外・下）で行動を記録。対象から目を離さずに記録可能です。
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- 階層的データモデル: 「使った(Use)」を記録すると、自動的に「止まった(Stop)」「見た(Look)」も記録される仕掛学ロジックを内蔵。
+
+- CSVエクスポート: 解析用に整形されたCSVデータを出力。回帰分析用のダミー変数（isMale, isPass等）やJST時刻も自動付与されます。
+
+- セッション履歴管理: 過去の調査データをブラウザ内に保存し、いつでも再ダウンロード可能。
+
+- ナイトモード: 夜間調査に最適なダークテーマを搭載。
+
+## 技術スタック
+
+- React (v18+)
+
+- TypeScript
+
+- Vite
+
+- Tailwind CSS (v4)
+
+- Lucide React (Icons)
+
+## ローカルでの起動方法 (Getting Started)
+
+このリポジトリをクローンして、手元のPCで開発・実行するための手順です。
+前提として Node.js (v16以上推奨) がインストールされている必要があります。
+
+### 1. 依存パッケージのインストール
+
+プロジェクトのルートディレクトリで以下のコマンドを実行し、必要なライブラリをインストールします。
+
+```bash
+npm install
+```
+
+### 2. 開発サーバーの起動
+
+インストールが完了したら、開発サーバーを立ち上げます。
+
+```bash
+npm run dev
+```
+
+ターミナルに表示されるURL（通常は http://localhost:5173）をブラウザで開くとアプリが起動します。
+
+## PWAとしての利用
+
+スマホでデモURLを開き、ブラウザのメニューから「ホーム画面に追加」(Android(chrome系)なら「アプリをインストール」, iphone(safari)なら「共有メニュー」>「ホーム画面に追加」）を行うことで、アプリのようにフルスクリーンで使用できます。
+オフライン環境でも動作するため、電波の悪い場所でのフィールドワークにも最適です。
+
+## License
+
+MIT License
