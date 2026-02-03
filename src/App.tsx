@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, AlertCircle } from 'lucide-react';
+import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, AlertCircle, X } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v3.1
+ * Shikakeology Action Logger (PWA-ready) v3.2
  * 仕掛学に基づく行動観察用ロガー
- * * Update v3.1:
- * - CSVカラム順序を回帰分析向けに最適化
- * - セッション終了時のフローを改善（STOP -> 保存 -> リセットの流れを明確化）
- * - 「開始から終了まで」を1セッションとして履歴管理しやすく調整
+ * * Update v3.2:
+ * - セッション設定（場所・メモ）の入力フローを改善
+ * - 開始時に設定ダイアログを表示し、入力してから計測開始するように変更
+ * - 終了時（保存前）にもメモの追記・編集ができるようにUIを調整
  */
 
 // --- Type Definitions ---
@@ -59,8 +59,10 @@ const ACTION_CONFIG = {
 export default function App() {
   // --- State ---
   const [isRecording, setIsRecording] = useState(false);
-  // セッション完了確認モードかどうか
-  const [isFinishing, setIsFinishing] = useState(false);
+  
+  // モード管理
+  const [isSetupMode, setIsSetupMode] = useState(false); // 開始前の設定入力モード
+  const [isFinishing, setIsFinishing] = useState(false); // 終了確認モード
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo>({
@@ -102,8 +104,11 @@ export default function App() {
 
       if (savedLogs) setLogs(JSON.parse(savedLogs));
       if (savedSession) setSessionInfo(JSON.parse(savedSession));
-      // 復帰時にRecording状態だったらPausedに戻す（安全策）
+      
+      // 復帰処理: Recording中だった場合はPausedに戻すか、Setup/Finishing状態をどうするか
+      // 安全のため、記録中フラグが立っていたら「再開」待ちの状態にする（今回は簡易的にfalse）
       if (savedIsRecording) setIsRecording(false); 
+      
       if (savedHistory) setHistory(JSON.parse(savedHistory));
       if (savedSettings) setSettings(JSON.parse(savedSettings));
     } catch (e) {
@@ -146,31 +151,42 @@ export default function App() {
 
   // --- Logic: Data Recording ---
 
-  const startSession = () => {
-    // 既に終了モードなら解除
-    setIsFinishing(false);
+  // 1. 開始ボタン押下 -> セットアップモードへ
+  const initSession = () => {
+      // 既存データがある状態で開始ボタンを押した場合のハンドリング
+      // ここでは「新規セッション設定」を開く
+      setIsSetupMode(true);
+      setIsFinishing(false);
+  };
 
+  // 2. セットアップ完了 -> 記録開始
+  const startRecording = () => {
     const now = Date.now();
-    // 開始時刻がなければ設定（新規セッション）
+    
+    // 開始時刻を設定（既に記録データがある場合の再開ロジックも考慮）
     if (!sessionInfo.startTime) {
         setSessionInfo(prev => ({ ...prev, startTime: now, endTime: null }));
-    }
-    // 再開の場合もEndTimeはクリア
-    else {
+    } else {
+        // 再開時はEndTimeをクリア
         setSessionInfo(prev => ({ ...prev, endTime: null }));
     }
     
+    setIsSetupMode(false);
     setIsRecording(true);
     triggerHaptic(100);
   };
 
+  const cancelSetup = () => {
+      setIsSetupMode(false);
+  };
+
+  // 3. 終了ボタン押下 -> 終了確認モードへ
   const stopSession = () => {
     if (!isRecording) return;
     
-    // 記録を一時停止し、終了確認モードへ
     setSessionInfo(prev => ({ ...prev, endTime: Date.now() }));
     setIsRecording(false);
-    setIsFinishing(true); // 保存ボタンを表示させるフラグ
+    setIsFinishing(true); 
     triggerHaptic([50, 50, 50]);
   };
 
@@ -181,7 +197,6 @@ export default function App() {
 
     const now = new Date();
     
-    // Hierarchical Logic: Use > Stop > Look > Pass
     const isUse = action === 'Use';
     const isStop = action === 'Stop' || isUse;
     const isLook = action === 'Look' || isStop;
@@ -207,7 +222,7 @@ export default function App() {
     triggerHaptic(30);
   };
 
-  // セッションを確定して履歴に保存
+  // 4. セッションを確定して履歴に保存
   const archiveAndResetSession = () => {
     if (logs.length === 0) {
       alert('保存するデータがありません。');
@@ -215,7 +230,6 @@ export default function App() {
       return;
     }
     
-    // 履歴オブジェクト作成
     const newArchive: ArchivedSession = {
         id: crypto.randomUUID(),
         date: new Date().toISOString(),
@@ -226,16 +240,20 @@ export default function App() {
         logs: [...logs]
     };
 
-    // 履歴に追加
     setHistory(prev => [newArchive, ...prev]);
     
-    // 現在のセッションをクリア（次回の準備）
+    // リセット
     setLogs([]);
     setSessionInfo({ startTime: null, endTime: null, note: '', location: '' });
     setIsFinishing(false);
     
     triggerHaptic([50, 100]);
-    alert('セッションを保存しました！新しい計測を開始できます。');
+    alert('セッションを保存しました！');
+  };
+
+  const resumeSession = () => {
+      setIsFinishing(false);
+      setIsRecording(true);
   };
 
   const deleteHistoryItem = (id: string) => {
@@ -250,19 +268,18 @@ export default function App() {
       setSessionInfo({ startTime: null, endTime: null, note: '', location: '' });
       setIsRecording(false);
       setIsFinishing(false);
+      setIsSetupMode(false);
     }
   };
 
   // --- Logic: CSV Export ---
 
   const generateCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo) => {
-    // Header definition - Reordered for Regression Analysis
     const headers = [
         'ID', 
         'Timestamp_ISO', 
         'Timestamp_JST', 
         'UnixTime', 
-        // Analysis Variables
         'Gender', 
         'Action_Raw', 
         'isMale', 
@@ -273,36 +290,30 @@ export default function App() {
         'Use(3)'
     ];
     
-    // Convert logs to CSV rows
     const rows = targetLogs.map(log => {
-        // JST Formatter
         const jstDate = new Date(log.unixTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-        
         return [
             log.id,
             log.timestamp,
             jstDate, 
             log.unixTime,
-            // Analysis Variables
-            log.gender,                             // Gender
-            log.action,                             // Action_Raw
-            log.gender === 'Male' ? '1' : '0',      // isMale
-            log.gender === 'Female' ? '1' : '0',    // isFemale
-            log.isPass ? '1' : '0',                 // Passing
-            log.isLook ? '1' : '0',                 // Look
-            log.isStop ? '1' : '0',                 // Stop
-            log.isUse ? '1' : '0',                  // Use
+            log.gender,
+            log.action,
+            log.gender === 'Male' ? '1' : '0',
+            log.gender === 'Female' ? '1' : '0',
+            log.isPass ? '1' : '0',
+            log.isLook ? '1' : '0',
+            log.isStop ? '1' : '0',
+            log.isUse ? '1' : '0',
         ];
     });
 
-    // CSV Meta Info
     const startTimeStr = targetInfo.startTime ? new Date(targetInfo.startTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '';
     const endTimeStr = targetInfo.endTime ? new Date(targetInfo.endTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '';
-    
     const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
     return [
-      `# Shikakeology Data Export (v3.1)`,
+      `# Shikakeology Data Export (v3.2)`,
       `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       `# Session Start,${startTimeStr}`,
       `# Session End,${endTimeStr}`,
@@ -321,18 +332,13 @@ export default function App() {
     }
 
     const csvContent = generateCSV(targetLogs, targetInfo);
-
-    // BOM付加
     const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
     const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
-    
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    
     const timestamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
     link.setAttribute('download', `${filenamePrefix}_${timestamp}.csv`);
-    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -350,20 +356,14 @@ export default function App() {
 
     // Up: Look (225-315)
     if (angle >= 225 && angle < 315) return 'Look';
-
     // Down: Use (45-135)
     if (angle >= 45 && angle < 135) return 'Use';
-
     // Side: Stop
-    // Male(Right area) -> Right(315-45) is Out
     if (gender === 'Male') {
        if (angle >= 315 || angle < 45) return 'Stop';
-    } 
-    // Female(Left area) -> Left(135-225) is Out
-    else {
+    } else {
        if (angle >= 135 && angle < 225) return 'Stop';
     }
-
     return 'Pass';
   };
 
@@ -448,7 +448,6 @@ export default function App() {
 
   const renderRingMenu = () => {
     if (!activeTouch) return null;
-    
     const { startX, startY, gender, selectedAction } = activeTouch;
     const config = ACTION_CONFIG[selectedAction];
     
@@ -467,7 +466,6 @@ export default function App() {
                  <span className="whitespace-nowrap">{config.label}</span>
              </div>
         </div>
-        
         <svg className="absolute top-0 left-0 w-[500px] h-[500px] -translate-x-1/2 -translate-y-1/2 overflow-visible opacity-60">
             <line 
                 x1="250" y1="250" 
@@ -502,20 +500,22 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-700'}`}>行動記録ロガー</div>
-                <div className="text-[10px] text-slate-400 font-mono tracking-wider">SHIKAKEOLOGY v3.1</div>
+                <div className="text-[10px] text-slate-400 font-mono tracking-wider">SHIKAKEOLOGY v3.2</div>
             </div>
         </div>
 
         <div className="flex items-center gap-3">
-            {!isRecording ? (
+            {!isRecording && !isSetupMode && !isFinishing && (
                  <button 
-                    onClick={startSession}
+                    onClick={initSession}
                     className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all hover:bg-blue-700"
                 >
                     <Play size={18} fill="currentColor" />
                     開始
                 </button>
-            ) : (
+            )}
+            
+            {isRecording && (
                 <button 
                     onClick={stopSession}
                     className="flex items-center gap-2 bg-slate-700 text-white px-5 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all hover:bg-slate-800 animate-pulse dark:bg-slate-600 dark:hover:bg-slate-500"
@@ -543,7 +543,7 @@ export default function App() {
       `}>
           <div className="max-w-md mx-auto space-y-6 pb-20">
               
-              {/* Section: Basic Settings */}
+              {/* Basic Settings */}
               <div className="space-y-4">
                   <h3 className="font-bold mb-3 flex items-center gap-2 text-lg border-b pb-2 border-slate-200 dark:border-slate-700">
                       <Settings size={20}/> 環境設定
@@ -588,7 +588,7 @@ export default function App() {
                   </div>
               </div>
 
-              {/* Section: History */}
+              {/* History */}
               <div className="space-y-4">
                   <h3 className="font-bold mb-3 flex items-center gap-2 text-lg border-b pb-2 border-slate-200 dark:border-slate-700">
                       <History size={20}/> 保存済み履歴 ({history.length})
@@ -638,7 +638,7 @@ export default function App() {
                     onClick={clearCurrentData}
                     className="w-full flex items-center justify-center gap-2 text-red-500 dark:text-red-400 p-2 text-sm hover:underline"
                   >
-                      <Trash2 size={14} /> 入力中のデータを破棄
+                      <Trash2 size={14} /> 全データをリセット
                   </button>
               </div>
           </div>
@@ -646,8 +646,9 @@ export default function App() {
 
       {/* Main Input Area */}
       <main className="flex-1 flex relative">
-        {/* State: Not Recording (Waiting) */}
-        {!isRecording && !isFinishing && (
+        
+        {/* State 1: Start Screen (Waiting) */}
+        {!isRecording && !isSetupMode && !isFinishing && (
             <div className={`absolute inset-0 z-20 flex items-center justify-center backdrop-blur-sm px-6
                 ${settings.darkMode ? 'bg-slate-900/70' : 'bg-slate-900/60'}
             `}>
@@ -659,37 +660,102 @@ export default function App() {
                     </div>
                     <h2 className="text-2xl font-bold mb-2">準備完了</h2>
                     <p className={`mb-6 text-sm leading-relaxed ${settings.darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
-                        「開始」ボタンで記録スタート。<br/>
-                        場所やメモは右上の <Settings size={14} className="inline"/> から入力できます。
+                        「開始」ボタンを押して、<br/>調査場所の設定を行ってください。
                     </p>
                     <button 
-                        onClick={startSession}
+                        onClick={initSession}
                         className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg active:scale-95 transition-transform"
                     >
-                        記録を開始する
+                        設定へ進む
                     </button>
                 </div>
             </div>
         )}
 
-        {/* State: Finishing (Paused & Confirm Save) */}
+        {/* State 2: Setup Mode (Input Info) */}
+        {isSetupMode && (
+             <div className={`absolute inset-0 z-30 flex items-center justify-center backdrop-blur-md px-6
+                ${settings.darkMode ? 'bg-slate-900/90' : 'bg-slate-900/80'}
+             `}>
+                <div className={`p-6 rounded-3xl shadow-2xl w-full max-w-sm border-2 animate-in fade-in zoom-in-95
+                    ${settings.darkMode ? 'bg-slate-800 border-blue-500/50 text-slate-100' : 'bg-white border-blue-200 text-slate-800'}
+                `}>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold flex items-center gap-2">
+                            <FileText className="text-blue-500"/> セッション設定
+                        </h2>
+                        <button onClick={cancelSetup} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <X size={20}/>
+                        </button>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                        <div>
+                            <label className="text-xs font-bold opacity-70 mb-1 block">調査場所 / Location</label>
+                            <input 
+                                type="text" 
+                                placeholder="例: A棟入口前" 
+                                autoFocus
+                                className={`w-full p-3 border rounded-lg outline-none ring-2 ring-transparent focus:ring-blue-500 transition-all
+                                    ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-300'}
+                                `}
+                                value={sessionInfo.location}
+                                onChange={e => setSessionInfo({...sessionInfo, location: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold opacity-70 mb-1 block">メモ / Note</label>
+                            <textarea 
+                                placeholder="天候、気温、特記事項など..." 
+                                className={`w-full p-3 border rounded-lg h-24 outline-none ring-2 ring-transparent focus:ring-blue-500 resize-none transition-all
+                                    ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-300'}
+                                `}
+                                value={sessionInfo.note}
+                                onChange={e => setSessionInfo({...sessionInfo, note: e.target.value})}
+                            />
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={startRecording}
+                        className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-lg shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+                    >
+                        <Play size={20} fill="currentColor"/>
+                        記録スタート
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* State 3: Finishing (Paused & Confirm Save) */}
         {isFinishing && (
-            <div className={`absolute inset-0 z-20 flex items-center justify-center backdrop-blur-md px-6
+            <div className={`absolute inset-0 z-30 flex items-center justify-center backdrop-blur-md px-6
                 ${settings.darkMode ? 'bg-slate-900/80' : 'bg-slate-900/70'}
             `}>
-                <div className={`p-6 rounded-3xl shadow-2xl text-center w-full max-w-sm border-2
-                    ${settings.darkMode ? 'bg-slate-800 border-slate-600 text-slate-100' : 'bg-white border-blue-100 text-slate-800'}
+                <div className={`p-6 rounded-3xl shadow-2xl w-full max-w-sm border-2 animate-in fade-in zoom-in-95
+                    ${settings.darkMode ? 'bg-slate-800 border-emerald-500/50 text-slate-100' : 'bg-white border-emerald-100 text-slate-800'}
                 `}>
-                    <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
-                    <h2 className="text-xl font-bold mb-2">セッション終了</h2>
-                    <p className={`mb-6 text-sm ${settings.darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
-                        記録データ ({logs.length}件) を履歴に保存し、<br/>次の計測の準備をしますか？
-                    </p>
+                    <div className="text-center mb-4">
+                        <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                        <h2 className="text-xl font-bold">セッション終了</h2>
+                        <p className="text-xs opacity-60">保存前にメモを追記できます</p>
+                    </div>
+
+                    <div className="mb-4">
+                        <label className="text-xs font-bold opacity-70 mb-1 block">最終メモ / Final Note</label>
+                        <textarea 
+                            className={`w-full p-3 border rounded-lg h-20 outline-none focus:border-emerald-500 resize-none transition-all text-sm
+                                ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-300'}
+                            `}
+                            value={sessionInfo.note}
+                            onChange={e => setSessionInfo({...sessionInfo, note: e.target.value})}
+                        />
+                    </div>
                     
                     <div className="space-y-3">
                         <button 
                             onClick={archiveAndResetSession}
-                            className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+                            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-lg shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
                         >
                             <Archive size={20} />
                             保存して終了
@@ -697,12 +763,12 @@ export default function App() {
                         
                         <div className="flex gap-2">
                              <button 
-                                onClick={startSession}
+                                onClick={resumeSession}
                                 className={`flex-1 py-3 rounded-lg font-bold text-sm active:scale-95 transition-transform
                                     ${settings.darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}
                                 `}
                             >
-                                <Play size={14} className="inline mr-1"/> 再開する
+                                <Play size={14} className="inline mr-1"/> 再開
                             </button>
                              <button 
                                 onClick={() => downloadCSV(logs, sessionInfo, 'shikake_temp')}
@@ -710,7 +776,7 @@ export default function App() {
                                     ${settings.darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}
                                 `}
                             >
-                                <Download size={14} className="inline mr-1"/> 仮保存(CSV)
+                                <Download size={14} className="inline mr-1"/> 仮保存
                             </button>
                         </div>
                     </div>
