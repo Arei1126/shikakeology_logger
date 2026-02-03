@@ -7,7 +7,7 @@
 
 以下のリンクから、ブラウザ上で実際に動作を試すことができます（スマホ推奨）。
 
-[Shikakeology Action Logger を起動する](https://arei1126.github.pages/shikakeology_logger)
+[Shikakeology Action Logger を起動する](https://arei1126.github.io/shikakeology_logger/)
 
 ## 特徴 (Features)
 
