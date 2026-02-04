@@ -1,15 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save } from 'lucide-react';
+import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.0
+ * Shikakeology Action Logger (PWA-ready) v4.5
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.0:
- * - 個人/集団 (Individual/Group) の記録に対応（UIを4分割化）
- * - 直近の記録の編集・削除機能（モーダル）を追加
- * - 個人単位のメモ機能を追加
- * - Web Audio APIによる操作音フィードバック
- * - CSV出力にグループ属性とメモ列を追加
+ * * Update v4.5:
+ * - メニュー展開時のUIレイアウトを修正。
+ * - ヘッダー（上のラベル）を常に最前面(z-50)に表示し、メニュー使用中も隠れないように変更。
+ * - 設定パネルのオーバーレイをヘッダーの下(top-14)から開始するように調整し、コンテキストを見失わないように改善。
  */
 
 // --- Type Definitions ---
@@ -22,9 +20,9 @@ interface LogEntry {
   timestamp: string; // ISO String
   unixTime: number;
   gender: Gender;
-  isGroup: boolean; // Added v4.0
+  isGroup: boolean;
   action: ActionType;
-  note: string;     // Added v4.0
+  note: string;
   // Shikakeology Logic Flags
   isPass: boolean;
   isLook: boolean;
@@ -48,7 +46,7 @@ interface ArchivedSession {
 
 interface AppSettings {
   hapticsEnabled: boolean;
-  soundEnabled: boolean; // Added v4.0
+  soundEnabled: boolean;
   darkMode: boolean;
 }
 
@@ -62,7 +60,7 @@ const ACTION_CONFIG = {
 };
 
 // --- Audio Helper ---
-const playTone = (type: 'record' | 'delete' | 'success') => {
+const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
     try {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioContext) return;
@@ -77,27 +75,46 @@ const playTone = (type: 'record' | 'delete' | 'success') => {
         const now = ctx.currentTime;
         
         if (type === 'record') {
-            // Short high pitch "Pop"
+            // Android-like "Tick" / "Click" (Hard, Short)
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(880, now);
-            osc.frequency.exponentialRampToValueAtTime(440, now + 0.1);
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.05);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        } else if (type === 'undo') {
+            // "Swoosh" / Reverse feel
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.linearRampToValueAtTime(100, now + 0.1);
             gain.gain.setValueAtTime(0.1, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            gain.gain.linearRampToValueAtTime(0.001, now + 0.1);
             osc.start(now);
             osc.stop(now + 0.1);
-        } else if (type === 'delete') {
-            // Low pitch "Bum"
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(150, now);
-            gain.gain.setValueAtTime(0.2, now);
-            gain.gain.linearRampToValueAtTime(0, now + 0.2);
-            osc.start(now);
-            osc.stop(now + 0.2);
-        } else if (type === 'success') {
-            // Rising chime
+        } else if (type === 'open') {
+            // "Pop" / Soft modal open
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(523.25, now); // C5
-            osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.linearRampToValueAtTime(0.001, now + 0.15);
+            osc.start(now);
+            osc.stop(now + 0.15);
+        } else if (type === 'delete') {
+            // Low thud
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(100, now);
+            osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.start(now);
+            osc.stop(now + 0.1);
+        } else if (type === 'success') {
+            // Bright chime
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, now);
+            osc.frequency.setValueAtTime(1046.5, now + 0.1); // Octave up
             gain.gain.setValueAtTime(0.1, now);
             gain.gain.linearRampToValueAtTime(0, now + 0.3);
             osc.start(now);
@@ -112,12 +129,14 @@ export default function App() {
   // --- State ---
   const [isRecording, setIsRecording] = useState(false);
   
-  // Modes
+  // Modes & Panels
   const [isSetupMode, setIsSetupMode] = useState(false); 
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
-  // Edit Modal State
+  // Modals
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo>({
@@ -160,7 +179,7 @@ export default function App() {
 
       if (savedLogs) setLogs(JSON.parse(savedLogs));
       if (savedSession) setSessionInfo(JSON.parse(savedSession));
-      if (savedIsRecording) setIsRecording(false); // Resume paused
+      if (savedIsRecording) setIsRecording(false);
       if (savedHistory) setHistory(JSON.parse(savedHistory));
       if (savedSettings) setSettings(JSON.parse(savedSettings));
     } catch (e) { console.error(e); }
@@ -178,7 +197,6 @@ export default function App() {
   }, [logs, sessionInfo, isRecording, history, settings]);
 
   useEffect(() => {
-    // Only scroll to bottom if NOT editing
     if (!editingLogId) {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
@@ -186,7 +204,7 @@ export default function App() {
 
   // --- Helper: Feedback ---
 
-  const triggerFeedback = (type: 'record' | 'delete' | 'success', hapticPattern?: number | number[]) => {
+  const triggerFeedback = (type: 'record' | 'undo' | 'open' | 'delete' | 'success', hapticPattern?: number | number[]) => {
     if (settings.hapticsEnabled && hapticPattern) {
         try { navigator.vibrate?.(hapticPattern); } catch(e){}
     }
@@ -197,7 +215,7 @@ export default function App() {
 
   // --- Logic: Session & Recording ---
 
-  const initSession = () => { setIsSetupMode(true); setIsFinishing(false); };
+  const initSession = () => { setIsSetupMode(true); setIsFinishing(false); triggerFeedback('open', 10); };
 
   const startRecording = () => {
     const now = Date.now();
@@ -214,7 +232,7 @@ export default function App() {
     setSessionInfo(prev => ({ ...prev, endTime: Date.now() }));
     setIsRecording(false);
     setIsFinishing(true); 
-    triggerFeedback('success', [50, 50, 50]);
+    triggerFeedback('open', [50, 50]);
   };
 
   const addLog = (gender: Gender, isGroup: boolean, action: ActionType) => {
@@ -222,7 +240,6 @@ export default function App() {
     triggerFeedback('record', 50);
 
     const now = new Date();
-    // Hierarchical Logic
     const isUse = action === 'Use';
     const isStop = action === 'Stop' || isUse;
     const isLook = action === 'Look' || isStop;
@@ -244,7 +261,18 @@ export default function App() {
 
   const undoLastLog = () => {
     setLogs(prev => prev.slice(0, -1));
-    triggerFeedback('delete', 30);
+    triggerFeedback('undo', 30);
+  };
+
+  const openEditModal = (id: string) => {
+      setEditingLogId(id);
+      triggerFeedback('open', 10);
+  };
+
+  const toggleSettings = () => {
+      const newState = !isSettingsOpen;
+      setIsSettingsOpen(newState);
+      if (newState) triggerFeedback('open', 10);
   };
 
   // --- Logic: Edit & Update ---
@@ -252,8 +280,6 @@ export default function App() {
   const updateLog = (id: string, updates: Partial<LogEntry>) => {
       setLogs(prev => prev.map(log => {
           if (log.id !== id) return log;
-          
-          // Re-calculate hierarchical flags if action changed
           let newFlags = {};
           if (updates.action) {
               const act = updates.action;
@@ -308,10 +334,10 @@ export default function App() {
   const generateCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo) => {
     const headers = [
         'ID', 'Timestamp_ISO', 'Timestamp_JST', 'UnixTime', 
-        'Gender', 'Action_Raw', 'isGroup', // Added isGroup
-        'isMale', 'isFemale', 'isGroup_Dummy', // Dummy vars
+        'Gender', 'Action_Raw', 'isGroup', 
+        'isMale', 'isFemale', 'isGroup_Dummy', 
         'Passing(0)', 'Look(1)', 'Stop(2)', 'Use(3)',
-        'Note' // Added Note
+        'Note'
     ];
     
     const rows = targetLogs.map(log => {
@@ -331,7 +357,7 @@ export default function App() {
             log.isLook ? '1' : '0',
             log.isStop ? '1' : '0',
             log.isUse ? '1' : '0',
-            `"${(log.note || '').replace(/"/g, '""')}"` // Escape quotes in note
+            `"${(log.note || '').replace(/"/g, '""')}"`
         ];
     });
 
@@ -340,7 +366,7 @@ export default function App() {
     const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
     return [
-      `# Shikakeology Data Export (v4.0)`,
+      `# Shikakeology Data Export (v4.5)`,
       `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       `# Session Start,${startTimeStr}`,
       `# Session End,${endTimeStr}`,
@@ -372,11 +398,9 @@ export default function App() {
     let angle = Math.atan2(dy, dx) * (180 / Math.PI);
     if (angle < 0) angle += 360;
 
-    // Up: Look (225-315) | Down: Use (45-135)
     if (angle >= 225 && angle < 315) return 'Look';
     if (angle >= 45 && angle < 135) return 'Use';
     
-    // Side: Stop (Male: Right, Female: Left)
     if (gender === 'Male') {
        if (angle >= 315 || angle < 45) return 'Stop';
     } else {
@@ -439,31 +463,202 @@ export default function App() {
                  <div className={`${labelColor} opacity-80 mb-1`}>{icon}</div>
                  <div className={`text-xs font-bold uppercase ${labelColor}`}>{isGroup ? 'Group' : 'Indiv.'}</div>
               </div>
-              
-              {/* Directions (Simplified) */}
               <div className="absolute inset-0 flex items-center justify-center w-48 h-48 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2">
-                  <div className={`absolute top-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}>
-                      <Eye size={20} />
-                  </div>
-                  <div className={`absolute bottom-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}>
-                       <Hand size={20} />
-                  </div>
-                  <div className={`absolute ${isMale ? 'right-0' : 'left-0'} flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}>
-                      {isMale ? <Footprints size={20} /> : <Footprints size={20} />}
-                  </div>
+                  <div className={`absolute top-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}><Eye size={20} /></div>
+                  <div className={`absolute bottom-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}><Hand size={20} /></div>
+                  <div className={`absolute ${isMale ? 'right-0' : 'left-0'} flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}>{isMale ? <Footprints size={20} /> : <Footprints size={20} />}</div>
               </div>
           </div>
       );
   };
 
-  // Edit Modal Component
+  // Guide Modal Component
+  const GuideModal = () => {
+    const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300">
+        <div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200
+            ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
+        `}>
+          {/* Modal Header */}
+          <div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <h2 className="font-bold text-lg flex items-center gap-2">
+              <BookOpen size={20} className="text-blue-500"/> ガイドブック
+            </h2>
+            <button onClick={() => setIsGuideOpen(false)} className="p-1 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex border-b border-slate-200 dark:border-slate-700">
+            {[
+              { id: 'theory', label: '理論背景', icon: <Layers size={16}/> },
+              { id: 'usage', label: '使い方', icon: <MousePointer2 size={16}/> },
+              { id: 'install', label: 'インストール', icon: <Smartphone size={16}/> },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id as any)}
+                className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors duration-200
+                  ${tab === t.id 
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' 
+                    : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'}
+                `}
+              >
+                {t.icon}{t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Tab: Theory */}
+            {tab === 'theory' && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                   仕掛学における関与プロセス
+                </h3>
+                <p className="text-sm leading-relaxed opacity-80">
+                  本アプリは、仕掛け（Shikake）に対する人々の行動変容を記録するために設計されています。
+                  特に、対象への**「関与の深さ（Engagement）」**を以下の4段階のファネル（漏斗）モデルで捉えます。
+                </p>
+
+                <div className={`p-4 rounded-xl border ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                  <ul className="space-y-4">
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-pink-600 text-white flex items-center justify-center font-bold shrink-0">3</div>
+                      <div>
+                        <div className="font-bold text-pink-600">使った (Use)</div>
+                        <div className="text-xs opacity-70">仕掛けに物理的に接触した、または意図された行動を完遂した状態。最も深い関与。</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">2</div>
+                      <div>
+                        <div className="font-bold text-emerald-600">止まった (Stop)</div>
+                        <div className="text-xs opacity-70">足を止めて仕掛けを観察した状態。興味・関心が高まっている段階。</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold shrink-0">1</div>
+                      <div>
+                        <div className="font-bold text-amber-500">見た (Look)</div>
+                        <div className="text-xs opacity-70">歩きながら視線を向けた、あるいは存在に気づいた状態。</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-400 text-white flex items-center justify-center font-bold shrink-0">0</div>
+                      <div>
+                        <div className="font-bold text-slate-500">通行 (Pass)</div>
+                        <div className="text-xs opacity-70">仕掛けの設置エリアを通過した全ての人（分母）。</div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+                
+                <p className="text-xs opacity-60">
+                  ※ 本アプリで上位の行動（例：Use）を記録すると、下位の行動（Stop, Look）も自動的に記録されたものとしてデータ処理されます。
+                </p>
+
+                <div className="pt-2 border-t dark:border-slate-700">
+                   <a 
+                     href="https://www.shikakeology.org/pdf/SIG-TBC-012-03.pdf" 
+                     target="_blank" 
+                     rel="noreferrer"
+                     className="flex items-center gap-2 text-blue-500 text-sm font-bold hover:underline"
+                   >
+                     <ExternalLink size={14}/> 参考文献: 仕掛学研究会 論文 (PDF)
+                   </a>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: Usage */}
+            {tab === 'usage' && (
+              <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">画面の見方</h3>
+                    <p className="text-sm opacity-80">
+                        画面は田の字型に4分割されています。対象者の属性に合わせてエリアを長押しします。
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold py-2">
+                        <div className="p-3 bg-rose-100 text-rose-800 rounded">♀ 個人 (左上)</div>
+                        <div className="p-3 bg-blue-100 text-blue-800 rounded">♂ 個人 (右上)</div>
+                        <div className="p-3 bg-rose-200 text-rose-900 rounded">♀ 集団 (左下)</div>
+                        <div className="p-3 bg-blue-200 text-blue-900 rounded">♂ 集団 (右下)</div>
+                    </div>
+                 </div>
+
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">ジェスチャー操作</h3>
+                    <p className="text-sm opacity-80">
+                        エリアを押したまま、対象者の行動に合わせて指をスライドさせます。
+                    </p>
+                    <ul className="text-sm space-y-2 pl-2">
+                        <li className="flex items-center gap-2"><span className="font-bold">⬆ 上へ:</span> <span className="bg-amber-100 text-amber-800 px-1 rounded">見た (Look)</span></li>
+                        <li className="flex items-center gap-2"><span className="font-bold">⬅➡ 外側へ:</span> <span className="bg-emerald-100 text-emerald-800 px-1 rounded">止まった (Stop)</span></li>
+                        <li className="flex items-center gap-2"><span className="font-bold">⬇ 下へ:</span> <span className="bg-pink-100 text-pink-800 px-1 rounded">使った (Use)</span></li>
+                        <li className="flex items-center gap-2"><span className="font-bold">指を離す:</span> <span className="bg-slate-100 text-slate-800 px-1 rounded">通行のみ (Pass)</span></li>
+                    </ul>
+                 </div>
+                 
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">修正と保存</h3>
+                    <p className="text-sm opacity-80">
+                        記録ミスは画面下のリストをタップして修正・削除が可能。計測終了後は必ず「保存」を行ってください。CSVとして書き出すことができます。
+                    </p>
+                 </div>
+              </div>
+            )}
+
+            {/* Tab: Install */}
+            {tab === 'install' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className={`p-4 rounded-xl border-l-4 border-blue-500 ${settings.darkMode ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
+                    <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-1">PWA (Progressive Web App)</h3>
+                    <p className="text-xs opacity-80">
+                        このアプリはブラウザで動作しますが、ホーム画面に追加することで、オフラインでも動くネイティブアプリのように使用できます。
+                    </p>
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="font-bold flex items-center gap-2 border-b pb-2 dark:border-slate-600">
+                        <span className="text-xl">🍎</span> iOS (iPhone/iPad)
+                    </h3>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
+                        <li>Safariでこのページを開きます。</li>
+                        <li className="flex items-center gap-1">画面下部の <Share size={16} className="inline text-blue-500"/> (共有) ボタンをタップ。</li>
+                        <li>メニューをスクロールして<span className="font-bold">「ホーム画面に追加」</span>を選択。</li>
+                        <li>右上の「追加」をタップして完了！</li>
+                    </ol>
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="font-bold flex items-center gap-2 border-b pb-2 dark:border-slate-600">
+                        <span className="text-xl">🤖</span> Android
+                    </h3>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
+                        <li>Chromeでこのページを開きます。</li>
+                        <li className="flex items-center gap-1">右上の <MoreVertical size={16} className="inline"/> (メニュー) ボタンをタップ。</li>
+                        <li><span className="font-bold">「アプリをインストール」</span>または「ホーム画面に追加」を選択。</li>
+                        <li>確認画面で「インストール」をタップして完了！</li>
+                    </ol>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const EditModal = () => {
       const log = logs.find(l => l.id === editingLogId);
       if (!log) return null;
 
       return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in fade-in zoom-in-95
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-opacity duration-300">
+              <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200
                   ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
               `}>
                   <div className="flex justify-between items-center mb-4">
@@ -485,7 +680,7 @@ export default function App() {
                                   className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all
                                       ${log.gender === g 
                                           ? (g === 'Male' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-rose-100 border-rose-500 text-rose-700')
-                                          : 'border-slate-200 dark:border-slate-600 opacity-50'}
+                                          : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
                                   `}
                               >
                                   {g === 'Male' ? '♂ 男' : '♀ 女'}
@@ -498,7 +693,7 @@ export default function App() {
                           <button
                               onClick={() => updateLog(log.id, { isGroup: false })}
                               className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
-                                  ${!log.isGroup ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-200 dark:border-slate-600 opacity-50'}
+                                  ${!log.isGroup ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
                               `}
                           >
                               <User size={18} /> 個人
@@ -506,7 +701,7 @@ export default function App() {
                           <button
                               onClick={() => updateLog(log.id, { isGroup: true })}
                               className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
-                                  ${log.isGroup ? 'bg-purple-100 border-purple-500 text-purple-700' : 'border-slate-200 dark:border-slate-600 opacity-50'}
+                                  ${log.isGroup ? 'bg-purple-100 border-purple-500 text-purple-700' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
                               `}
                           >
                               <Users size={18} /> 集団
@@ -519,10 +714,10 @@ export default function App() {
                               <button
                                   key={act}
                                   onClick={() => updateLog(log.id, { action: act })}
-                                  className={`py-2 rounded-lg text-xs font-bold border-2 flex flex-col items-center gap-1
+                                  className={`py-2 rounded-lg text-xs font-bold border-2 flex flex-col items-center gap-1 transition-colors
                                       ${log.action === act 
-                                          ? 'border-slate-800 bg-slate-100 dark:bg-slate-700 dark:border-white opacity-100 ring-2 ring-offset-1' 
-                                          : 'border-transparent bg-slate-50 dark:bg-slate-700 opacity-60'}
+                                          ? 'border-slate-800 bg-slate-100 dark:bg-slate-700 dark:border-white opacity-100 ring-2 ring-offset-1 ring-slate-400' 
+                                          : 'border-transparent bg-slate-50 dark:bg-slate-700 opacity-60 hover:opacity-100'}
                                   `}
                               >
                                   {ACTION_CONFIG[act].icon}
@@ -539,8 +734,8 @@ export default function App() {
                               value={log.note}
                               onChange={(e) => updateLog(log.id, { note: e.target.value })}
                               placeholder="特徴など..."
-                              className={`w-full p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 
-                                  ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-300'}
+                              className={`w-full p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors
+                                  ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'}
                               `}
                           />
                       </div>
@@ -548,13 +743,13 @@ export default function App() {
                       <div className="pt-4 flex gap-3 border-t border-slate-200 dark:border-slate-700">
                           <button 
                               onClick={() => setEditingLogId(null)}
-                              className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold"
+                              className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors"
                           >
                               完了
                           </button>
                           <button 
                               onClick={() => deleteLog(log.id)}
-                              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"
+                              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                           >
                               <Trash2 size={24} />
                           </button>
@@ -569,45 +764,68 @@ export default function App() {
     <div className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none transition-colors duration-300
         ${settings.darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-800'}
     `}>
-      {/* Edit Modal */}
+      {/* Modals */}
       {editingLogId && <EditModal />}
+      {isGuideOpen && <GuideModal />}
 
-      {/* Header */}
-      <header className={`px-4 py-2 shadow-sm flex items-center justify-between shrink-0 z-20 h-14 border-b transition-colors duration-300
+      {/* Header - Z-index elevated to 50 */}
+      <header className={`px-4 py-2 shadow-sm flex items-center justify-between shrink-0 z-50 h-14 border-b transition-colors duration-300
           ${settings.darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}
       `}>
         <div className="flex items-center gap-2">
             <div className="leading-tight">
-                <div className="font-bold text-lg">行動記録ロガー</div>
-                <div className="text-[10px] opacity-60 font-mono tracking-wider">SHIKAKEOLOGY v4.0</div>
+                <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.5</div>
             </div>
         </div>
 
         <div className="flex items-center gap-3">
             {!isRecording && !isSetupMode && !isFinishing && (
-                 <button onClick={initSession} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all">
+                 <button onClick={initSession} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all hover:bg-blue-700">
                     <Play size={18} fill="currentColor" /> 開始
                 </button>
             )}
             {isRecording && (
-                <button onClick={stopSession} className="flex items-center gap-2 bg-slate-700 text-white px-5 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all animate-pulse dark:bg-slate-600">
+                <button onClick={stopSession} className="flex items-center gap-2 bg-slate-700 text-white px-5 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all animate-pulse dark:bg-slate-600 dark:hover:bg-slate-500 hover:bg-slate-800">
                     <Square size={18} fill="currentColor" /> 終了
                 </button>
             )}
-            <button onClick={() => document.getElementById('settings-panel')?.classList.toggle('hidden')} className="p-2 rounded-full transition-colors hover:bg-slate-200 dark:hover:bg-slate-700">
+            <button 
+                onClick={toggleSettings} 
+                className={`p-2 rounded-full transition-colors relative ${settings.darkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-600'}`}
+            >
                 <Settings size={22} />
             </button>
         </div>
       </header>
 
-      {/* Settings Panel */}
-      <div id="settings-panel" className={`hidden absolute top-14 left-0 w-full z-30 p-4 border-b h-[calc(100vh-3.5rem)] overflow-y-auto backdrop-blur-md transition-colors duration-300
-          ${settings.darkMode ? 'bg-slate-900/95 border-slate-700' : 'bg-white/95 border-slate-200'}
-      `}>
-          <div className="max-w-md mx-auto space-y-6 pb-20">
+      {/* Settings Panel (Animated) - Fixed position below header (top-14) */}
+      <div className={`fixed inset-0 top-14 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${isSettingsOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsSettingsOpen(false)}>
+        <div 
+            className={`absolute top-0 left-0 w-full p-4 border-b h-full overflow-y-auto transition-transform duration-300 ease-out
+              ${settings.darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}
+              ${isSettingsOpen ? 'translate-y-0' : '-translate-y-full'}
+            `}
+            onClick={(e) => e.stopPropagation()} // Prevent close on panel click
+        >
+            <div className="max-w-md mx-auto space-y-6 pb-20">
+              
+              {/* New: Guidebook Button */}
+              <button 
+                onClick={() => { setIsGuideOpen(true); setIsSettingsOpen(false); triggerFeedback('open', 10); }}
+                className={`w-full py-4 rounded-xl font-bold text-lg shadow-sm flex items-center justify-center gap-3 transition-transform active:scale-95
+                   ${settings.darkMode 
+                      ? 'bg-gradient-to-r from-slate-700 to-slate-600 text-white border border-slate-600' 
+                      : 'bg-gradient-to-r from-slate-100 to-white text-slate-700 border border-slate-200'}
+                `}
+              >
+                  <BookOpen className="text-blue-500"/>
+                  アプリの使い方・背景理論
+              </button>
+
               {/* Settings Controls */}
               <div className="space-y-4">
-                  <h3 className="font-bold border-b pb-2 flex items-center gap-2"><Settings size={20}/> 環境設定</h3>
+                  <h3 className="font-bold border-b pb-2 flex items-center gap-2 border-slate-200 dark:border-slate-700"><Settings size={20}/> 環境設定</h3>
                   {/* Dark Mode */}
                   <div className="flex justify-between items-center p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
                       <div className="flex gap-3 items-center"><Moon size={20} className="text-purple-400"/><span>ナイトモード</span></div>
@@ -626,16 +844,16 @@ export default function App() {
               
               {/* History */}
               <div className="space-y-4">
-                  <h3 className="font-bold border-b pb-2 flex items-center gap-2"><History size={20}/> 保存済み履歴</h3>
+                  <h3 className="font-bold border-b pb-2 flex items-center gap-2 border-slate-200 dark:border-slate-700"><History size={20}/> 保存済み履歴</h3>
                   {history.length === 0 ? <div className="text-center py-4 text-sm opacity-50">履歴なし</div> : (
                       <div className="space-y-3">
                           {history.map(item => (
                               <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
                                   <div className="flex justify-between mb-2">
                                       <span className="font-bold text-sm">{new Date(item.date).toLocaleString()}</span>
-                                      <button onClick={() => deleteHistoryItem(item.id)} className="text-red-400"><Trash2 size={16}/></button>
+                                      <button onClick={() => deleteHistoryItem(item.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
                                   </div>
-                                  <button onClick={() => downloadCSV(item.logs, item.sessionInfo, 'history')} className="w-full py-2 bg-white dark:bg-slate-700 border rounded text-sm font-bold flex justify-center gap-2">
+                                  <button onClick={() => downloadCSV(item.logs, item.sessionInfo, 'history')} className="w-full py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-sm font-bold flex justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
                                       <Download size={14}/> CSV DL
                                   </button>
                               </div>
@@ -644,40 +862,56 @@ export default function App() {
                   )}
               </div>
           </div>
+        </div>
       </div>
 
       {/* Main Input Area (2x2 Grid) */}
       <main className="flex-1 flex relative">
           
-        {/* Overlays (Start/Setup/Finish) - Same as previous, logic preserved */}
+        {/* Overlays (Start/Setup/Finish) */}
         {!isRecording && !isSetupMode && !isFinishing && (
              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
-                <div className={`p-8 rounded-3xl text-center w-full max-w-sm ${settings.darkMode ? 'bg-slate-800' : 'bg-white'}`}>
+                <div className={`p-8 rounded-3xl text-center w-full max-w-sm ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
                     <Play size={48} className="mx-auto mb-4 text-blue-500"/>
                     <h2 className="text-2xl font-bold mb-4">準備完了</h2>
-                    <button onClick={initSession} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl">設定へ進む</button>
+                    <button onClick={initSession} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-blue-700 transition-colors">設定へ進む</button>
                 </div>
             </div>
         )}
         {isSetupMode && (
-             <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6">
-                <div className={`p-6 rounded-3xl w-full max-w-sm ${settings.darkMode ? 'bg-slate-800' : 'bg-white'}`}>
-                    <div className="flex justify-between mb-4"><h2 className="font-bold text-xl">セッション設定</h2><button onClick={() => setIsSetupMode(false)}><X/></button></div>
-                    <input type="text" placeholder="場所" className="w-full p-3 mb-4 border rounded-lg bg-transparent" value={sessionInfo.location} onChange={e => setSessionInfo({...sessionInfo, location: e.target.value})}/>
-                    <textarea placeholder="メモ" className="w-full p-3 mb-6 border rounded-lg h-24 bg-transparent resize-none" value={sessionInfo.note} onChange={e => setSessionInfo({...sessionInfo, note: e.target.value})}/>
-                    <button onClick={startRecording} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-lg flex justify-center gap-2"><Play/> 記録スタート</button>
+             <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6 animate-in fade-in duration-300">
+                <div className={`p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
+                    <div className="flex justify-between mb-4"><h2 className="font-bold text-xl">セッション設定</h2><button onClick={() => setIsSetupMode(false)} className="hover:opacity-60"><X/></button></div>
+                    <input 
+                        type="text" 
+                        placeholder="場所" 
+                        className={`w-full p-3 mb-4 border rounded-lg outline-none transition-colors ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'}`} 
+                        value={sessionInfo.location} 
+                        onChange={e => setSessionInfo({...sessionInfo, location: e.target.value})}
+                    />
+                    <textarea 
+                        placeholder="メモ" 
+                        className={`w-full p-3 mb-6 border rounded-lg h-24 resize-none outline-none transition-colors ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'}`} 
+                        value={sessionInfo.note} 
+                        onChange={e => setSessionInfo({...sessionInfo, note: e.target.value})}
+                    />
+                    <button onClick={startRecording} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-lg flex justify-center gap-2 hover:bg-blue-700 transition-colors"><Play/> 記録スタート</button>
                 </div>
             </div>
         )}
         {isFinishing && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6">
-                <div className={`p-6 rounded-3xl w-full max-w-sm ${settings.darkMode ? 'bg-slate-800' : 'bg-white'}`}>
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6 animate-in fade-in duration-300">
+                <div className={`p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
                     <div className="text-center mb-4"><CheckCircle size={48} className="text-emerald-500 mx-auto mb-2"/><h2 className="font-bold text-xl">終了確認</h2></div>
-                    <textarea className="w-full p-3 mb-4 border rounded-lg h-20 bg-transparent text-sm resize-none" value={sessionInfo.note} onChange={e => setSessionInfo({...sessionInfo, note: e.target.value})}/>
-                    <button onClick={archiveAndResetSession} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-lg mb-3 flex justify-center gap-2"><Archive/> 保存して終了</button>
+                    <textarea 
+                        className={`w-full p-3 mb-4 border rounded-lg h-20 text-sm resize-none outline-none transition-colors ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'}`} 
+                        value={sessionInfo.note} 
+                        onChange={e => setSessionInfo({...sessionInfo, note: e.target.value})}
+                    />
+                    <button onClick={archiveAndResetSession} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-lg mb-3 flex justify-center gap-2 hover:bg-emerald-700 transition-colors"><Archive/> 保存して終了</button>
                     <div className="flex gap-2">
-                        <button onClick={() => setIsRecording(true) || setIsFinishing(false)} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold text-sm">再開</button>
-                        <button onClick={() => downloadCSV(logs, sessionInfo, 'temp')} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold text-sm">仮保存</button>
+                        <button onClick={() => setIsRecording(true) || setIsFinishing(false)} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-colors ${settings.darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>再開</button>
+                        <button onClick={() => downloadCSV(logs, sessionInfo, 'temp')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-colors ${settings.darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>仮保存</button>
                     </div>
                 </div>
             </div>
@@ -746,7 +980,7 @@ export default function App() {
             </div>
         </div>
 
-        {/* Dynamic Ring Menu Overlay - (No changes needed logic-wise, renders over grid) */}
+        {/* Dynamic Ring Menu Overlay */}
         {activeTouch && (
              <div className="fixed pointer-events-none z-50" style={{ left: activeTouch.startX, top: activeTouch.startY, transform: 'translate(-50%, -50%)' }}>
                 <div className={`rounded-full flex items-center justify-center border-2 border-white/50 w-40 h-40 ${ACTION_CONFIG[activeTouch.selectedAction].color} shadow-2xl`}>
@@ -764,44 +998,59 @@ export default function App() {
           ${settings.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}
       `}>
           <div className={`flex items-center justify-between px-4 py-2 border-b ${settings.darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
-              <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 opacity-60">
+              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                  <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
                  直近の記録 (タップして編集)
               </span>
-              <button onClick={undoLastLog} disabled={logs.length === 0 || !isRecording} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border opacity-70 hover:opacity-100">
+              <button 
+                  onClick={undoLastLog} 
+                  disabled={logs.length === 0 || !isRecording} 
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border transition-opacity hover:opacity-100 ${logs.length === 0 || !isRecording ? 'opacity-30' : 'opacity-70'} ${settings.darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-100'}`}
+              >
                   <RotateCcw size={14} /> 1つ戻す
               </button>
           </div>
           
           <div className={`flex-1 overflow-y-auto p-2 space-y-2 ${settings.darkMode ? 'bg-slate-900/50' : 'bg-slate-50/50'}`}>
               {logs.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-sm italic opacity-40">データはまだありません</div>
+                  <div className={`h-full flex flex-col items-center justify-center text-sm italic opacity-40 ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>データはまだありません</div>
               ) : (
                   logs.map((log, i) => (
                       <div 
                         key={log.id} 
-                        onClick={() => setEditingLogId(log.id)}
-                        className={`flex items-center gap-2 p-3 rounded-xl shadow-sm border text-sm animate-in fade-in slide-in-from-bottom-2 cursor-pointer active:scale-95 transition-transform
-                          ${settings.darkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-100 hover:bg-slate-50'}
+                        onClick={() => openEditModal(log.id)}
+                        className={`flex items-center gap-2 p-2 rounded-xl shadow-sm border text-xs animate-in fade-in slide-in-from-bottom-2 cursor-pointer active:scale-95 transition-transform
+                          ${settings.darkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200' : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-800'}
                       `}>
-                          <span className="font-mono text-xs opacity-40 w-10 text-right">
+                          {/* 1. Index No. */}
+                          <span className={`font-mono font-bold w-6 text-right ${settings.darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                              #{i + 1}
+                          </span>
+
+                          {/* 2. Time */}
+                          <span className="font-mono opacity-50 w-12 text-right tracking-tighter">
                               {new Date(log.unixTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}
                           </span>
                           
-                          <div className={`flex items-center gap-1 font-bold w-16 ${log.gender === 'Male' ? 'text-blue-500' : 'text-rose-500'}`}>
-                             {log.gender === 'Male' ? '♂' : '♀'}
-                             {log.isGroup && <Users size={14} className="ml-1 opacity-70"/>}
+                          {/* 3. Gender/Group */}
+                          <div className={`flex items-center justify-center gap-0.5 font-bold w-10 ${log.gender === 'Male' ? 'text-blue-500' : 'text-rose-500'}`}>
+                             <span className="text-sm">{log.gender === 'Male' ? '♂' : '♀'}</span>
+                             {log.isGroup && <Users size={12} className="opacity-70"/>}
                           </div>
 
-                          <span className={`px-2 py-1 rounded text-xs font-bold text-white flex-1 text-center ${ACTION_CONFIG[log.action].color}`}>
+                          {/* 4. Action */}
+                          <span className={`px-2 py-1 rounded text-[10px] font-bold text-white flex-1 text-center truncate ${ACTION_CONFIG[log.action].color}`}>
                               {ACTION_CONFIG[log.action].label.split(' ')[0]}
                           </span>
                           
-                          {log.note && <FileText size={14} className="opacity-40 text-blue-400" />}
+                          {/* 5. Note Icon */}
+                          <div className="w-4 flex justify-center">
+                              {log.note && <FileText size={12} className="opacity-50 text-blue-400" />}
+                          </div>
                       </div>
                   ))
               )}
-              <div ref={logsEndRef} className="h-10" /> {/* Extra spacer for easy scrolling */}
+              <div ref={logsEndRef} className="h-10" />
           </div>
       </div>
     </div>

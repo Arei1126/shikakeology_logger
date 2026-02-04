@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   sodipodi:docname="drawing-1.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#999999"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.96375"
+     inkscape:cx="394.81193"
+     inkscape:cy="467.96368"
+     inkscape:window-width="1280"
+     inkscape:window-height="987"
+     inkscape:window-x="1024"
+     inkscape:window-y="176"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <rect
+       x="228.27496"
+       y="438.75471"
+       width="278.0804"
+       height="201.03477"
+       id="rect2" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:#333333;fill-rule:evenodd;stroke-width:0.813001;stroke-linejoin:bevel;stroke-miterlimit:4.8;fill-opacity:1"
+       id="rect1"
+       width="73.575439"
+       height="73.575439"
+       x="60.397751"
+       y="105.9706"
+       inkscape:export-filename="icons/icon.png"
+       inkscape:export-xdpi="241.66"
+       inkscape:export-ydpi="241.66" />
+    <text
+       xml:space="preserve"
+       transform="matrix(0.30440741,0,0,0.30440741,-6.0786399,-7.2995527)"
+       id="text1"
+       style="font-size:37.3333px;line-height:0.85;font-family:'Gen Jyuu Gothic P';-inkscape-font-specification:'Gen Jyuu Gothic P';text-align:justify;letter-spacing:0px;white-space:pre;shape-inside:url(#rect2);display:inline;fill:#ffffff"><tspan
+         x="228.27539"
+         y="468.07367"
+         id="tspan3"><tspan
+           style="font-family:'IBM Plex Sans';-inkscape-font-specification:'IBM Plex Sans'"
+           id="tspan1">Shikakeology
+</tspan></tspan><tspan
+         x="228.27539"
+         y="502.80677"
+         id="tspan5"><tspan
+           style="font-family:'IBM Plex Sans';-inkscape-font-specification:'IBM Plex Sans'"
+           id="tspan4">Action
+</tspan></tspan><tspan
+         x="228.27539"
+         y="537.53986"
+         id="tspan7"><tspan
+           style="font-family:'IBM Plex Sans';-inkscape-font-specification:'IBM Plex Sans'"
+           id="tspan6">Logger</tspan></tspan></text>
+  </g>
+</svg>

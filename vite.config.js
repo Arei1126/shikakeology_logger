@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate', // 更新があったらすぐに新しいのを読み込む設定
       includeAssets: ['favicon.ico', 'apple-touch-icon.png'], // キャッシュする静的ファイル
       manifest: {
-        name: 'Shikakeology Logger',
+        name: 'Shikakeology Action Logger',
         short_name: 'Shikake Logger',
-        description: 'Logger App for shikake experiments',
+        description: 'Logger App for Shikake Behavioral observation.',
         theme_color: '#ffffff',
         icons: [
           {
