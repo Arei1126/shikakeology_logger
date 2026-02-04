@@ -2,12 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.5
+ * Shikakeology Action Logger (PWA-ready) v4.6
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.5:
- * - メニュー展開時のUIレイアウトを修正。
- * - ヘッダー（上のラベル）を常に最前面(z-50)に表示し、メニュー使用中も隠れないように変更。
- * - 設定パネルのオーバーレイをヘッダーの下(top-14)から開始するように調整し、コンテキストを見失わないように改善。
+ * * Update v4.6:
+ * - 【重要】EditModalコンポーネントをApp外に移動し、文字入力時の再レンダリングによるフォーカス消失バグを修正。
+ * - 環境設定パネルの各項目において、背景色と文字色を明示的にセットで指定し、OSのダークモード設定との競合による視認性低下を防止。
  */
 
 // --- Type Definitions ---
@@ -75,7 +74,6 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
         const now = ctx.currentTime;
         
         if (type === 'record') {
-            // Android-like "Tick" / "Click" (Hard, Short)
             osc.type = 'sine';
             osc.frequency.setValueAtTime(800, now);
             osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.05);
@@ -84,7 +82,6 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.05);
         } else if (type === 'undo') {
-            // "Swoosh" / Reverse feel
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(200, now);
             osc.frequency.linearRampToValueAtTime(100, now + 0.1);
@@ -93,7 +90,6 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.1);
         } else if (type === 'open') {
-            // "Pop" / Soft modal open
             osc.type = 'sine';
             osc.frequency.setValueAtTime(400, now);
             osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
@@ -102,7 +98,6 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.15);
         } else if (type === 'delete') {
-            // Low thud
             osc.type = 'square';
             osc.frequency.setValueAtTime(100, now);
             osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
@@ -111,7 +106,6 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.1);
         } else if (type === 'success') {
-            // Bright chime
             osc.type = 'sine';
             osc.frequency.setValueAtTime(523.25, now);
             osc.frequency.setValueAtTime(1046.5, now + 0.1); // Octave up
@@ -123,6 +117,322 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
     } catch (e) {
         console.error("Audio playback failed", e);
     }
+};
+
+// --- Sub-Components (Defined outside App to prevent re-render issues) ---
+
+const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) => {
+    const isMale = gender === 'Male';
+    const labelColor = isMale ? 'text-blue-100' : 'text-rose-100';
+    const icon = isGroup ? <Users size={32} /> : <User size={32} />;
+    
+    return (
+        <div className={`absolute pointer-events-none flex flex-col items-center justify-center opacity-60 scale-75`}>
+            <div className={`w-24 h-24 rounded-full border-4 flex flex-col items-center justify-center mb-2
+                ${isMale 
+                    ? 'border-blue-300/30 bg-blue-800/20 dark:border-blue-400/30 dark:bg-blue-900/40' 
+                    : 'border-rose-300/30 bg-rose-800/20 dark:border-rose-400/30 dark:bg-rose-900/40'
+                }`}
+            >
+                <div className={`${labelColor} opacity-80 mb-1`}>{icon}</div>
+                <div className={`text-xs font-bold uppercase ${labelColor}`}>{isGroup ? 'Group' : 'Indiv.'}</div>
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center w-48 h-48 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2">
+                <div className={`absolute top-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}><Eye size={20} /></div>
+                <div className={`absolute bottom-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}><Hand size={20} /></div>
+                <div className={`absolute ${isMale ? 'right-0' : 'left-0'} flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}>{isMale ? <Footprints size={20} /> : <Footprints size={20} />}</div>
+            </div>
+        </div>
+    );
+};
+
+const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () => void }) => {
+    const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300">
+        <div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200
+            ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
+        `}>
+          <div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <h2 className="font-bold text-lg flex items-center gap-2">
+              <BookOpen size={20} className="text-blue-500"/> ガイドブック
+            </h2>
+            <button onClick={onClose} className="p-1 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
+          </div>
+
+          <div className="flex border-b border-slate-200 dark:border-slate-700">
+            {[
+              { id: 'theory', label: '理論背景', icon: <Layers size={16}/> },
+              { id: 'usage', label: '使い方', icon: <MousePointer2 size={16}/> },
+              { id: 'install', label: 'インストール', icon: <Smartphone size={16}/> },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id as any)}
+                className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors duration-200
+                  ${tab === t.id 
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' 
+                    : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'}
+                `}
+              >
+                {t.icon}{t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {tab === 'theory' && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                   仕掛学における関与プロセス
+                </h3>
+                <p className="text-sm leading-relaxed opacity-80">
+                  本アプリは、仕掛け（Shikake）に対する人々の行動変容を記録するために設計されています。
+                  特に、対象への**「関与の深さ（Engagement）」**を以下の4段階のファネル（漏斗）モデルで捉えます。
+                </p>
+
+                <div className={`p-4 rounded-xl border ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                  <ul className="space-y-4">
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-pink-600 text-white flex items-center justify-center font-bold shrink-0">3</div>
+                      <div>
+                        <div className="font-bold text-pink-600">使った (Use)</div>
+                        <div className="text-xs opacity-70">仕掛けに物理的に接触した、または意図された行動を完遂した状態。最も深い関与。</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">2</div>
+                      <div>
+                        <div className="font-bold text-emerald-600">止まった (Stop)</div>
+                        <div className="text-xs opacity-70">足を止めて仕掛けを観察した状態。興味・関心が高まっている段階。</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold shrink-0">1</div>
+                      <div>
+                        <div className="font-bold text-amber-500">見た (Look)</div>
+                        <div className="text-xs opacity-70">歩きながら視線を向けた、あるいは存在に気づいた状態。</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-400 text-white flex items-center justify-center font-bold shrink-0">0</div>
+                      <div>
+                        <div className="font-bold text-slate-500">通行 (Pass)</div>
+                        <div className="text-xs opacity-70">仕掛けの設置エリアを通過した全ての人（分母）。</div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+                
+                <p className="text-xs opacity-60">
+                  ※ 本アプリで上位の行動（例：Use）を記録すると、下位の行動（Stop, Look）も自動的に記録されたものとしてデータ処理されます。
+                </p>
+
+                <div className="pt-2 border-t dark:border-slate-700">
+                   <a 
+                     href="https://www.shikakeology.org/pdf/SIG-TBC-012-03.pdf" 
+                     target="_blank" 
+                     rel="noreferrer"
+                     className="flex items-center gap-2 text-blue-500 text-sm font-bold hover:underline"
+                   >
+                     <ExternalLink size={14}/> 参考文献: 仕掛学研究会 論文 (PDF)
+                   </a>
+                </div>
+              </div>
+            )}
+
+            {tab === 'usage' && (
+              <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">画面の見方</h3>
+                    <p className="text-sm opacity-80">
+                        画面は田の字型に4分割されています。対象者の属性に合わせてエリアを長押しします。
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold py-2">
+                        <div className="p-3 bg-rose-100 text-rose-800 rounded">♀ 個人 (左上)</div>
+                        <div className="p-3 bg-blue-100 text-blue-800 rounded">♂ 個人 (右上)</div>
+                        <div className="p-3 bg-rose-200 text-rose-900 rounded">♀ 集団 (左下)</div>
+                        <div className="p-3 bg-blue-200 text-blue-900 rounded">♂ 集団 (右下)</div>
+                    </div>
+                 </div>
+
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">ジェスチャー操作</h3>
+                    <p className="text-sm opacity-80">
+                        エリアを押したまま、対象者の行動に合わせて指をスライドさせます。
+                    </p>
+                    <ul className="text-sm space-y-2 pl-2">
+                        <li className="flex items-center gap-2"><span className="font-bold">⬆ 上へ:</span> <span className="bg-amber-100 text-amber-800 px-1 rounded">見た (Look)</span></li>
+                        <li className="flex items-center gap-2"><span className="font-bold">⬅➡ 外側へ:</span> <span className="bg-emerald-100 text-emerald-800 px-1 rounded">止まった (Stop)</span></li>
+                        <li className="flex items-center gap-2"><span className="font-bold">⬇ 下へ:</span> <span className="bg-pink-100 text-pink-800 px-1 rounded">使った (Use)</span></li>
+                        <li className="flex items-center gap-2"><span className="font-bold">指を離す:</span> <span className="bg-slate-100 text-slate-800 px-1 rounded">通行のみ (Pass)</span></li>
+                    </ul>
+                 </div>
+                 
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">修正と保存</h3>
+                    <p className="text-sm opacity-80">
+                        記録ミスは画面下のリストをタップして修正・削除が可能。計測終了後は必ず「保存」を行ってください。CSVとして書き出すことができます。
+                    </p>
+                 </div>
+              </div>
+            )}
+
+            {tab === 'install' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className={`p-4 rounded-xl border-l-4 border-blue-500 ${settings.darkMode ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
+                    <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-1">PWA (Progressive Web App)</h3>
+                    <p className="text-xs opacity-80">
+                        このアプリはブラウザで動作しますが、ホーム画面に追加することで、オフラインでも動くネイティブアプリのように使用できます。
+                    </p>
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="font-bold flex items-center gap-2 border-b pb-2 dark:border-slate-600">
+                        <span className="text-xl">🍎</span> iOS (iPhone/iPad)
+                    </h3>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
+                        <li>Safariでこのページを開きます。</li>
+                        <li className="flex items-center gap-1">画面下部の <Share size={16} className="inline text-blue-500"/> (共有) ボタンをタップ。</li>
+                        <li>メニューをスクロールして<span className="font-bold">「ホーム画面に追加」</span>を選択。</li>
+                        <li>右上の「追加」をタップして完了！</li>
+                    </ol>
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="font-bold flex items-center gap-2 border-b pb-2 dark:border-slate-600">
+                        <span className="text-xl">🤖</span> Android
+                    </h3>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
+                        <li>Chromeでこのページを開きます。</li>
+                        <li className="flex items-center gap-1">右上の <MoreVertical size={16} className="inline"/> (メニュー) ボタンをタップ。</li>
+                        <li><span className="font-bold">「アプリをインストール」</span>または「ホーム画面に追加」を選択。</li>
+                        <li>確認画面で「インストール」をタップして完了！</li>
+                    </ol>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+};
+
+// EditModal component extracted to prevent focus loss issues on re-renders
+interface EditModalProps {
+    log: LogEntry | undefined;
+    settings: AppSettings;
+    onClose: () => void;
+    onUpdate: (id: string, updates: Partial<LogEntry>) => void;
+    onDelete: (id: string) => void;
+}
+
+const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate, onDelete }) => {
+    if (!log) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-opacity duration-300">
+            <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200
+                ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
+            `}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold flex items-center gap-2">
+                        <Edit3 size={20} /> 記録を編集
+                    </h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+                        <X size={24} />
+                    </button>
+                </div>
+
+                <div className="space-y-4">
+                    {/* Gender Select */}
+                    <div className="flex gap-2">
+                        {(['Male', 'Female'] as const).map(g => (
+                            <button
+                                key={g}
+                                onClick={() => onUpdate(log.id, { gender: g })}
+                                className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all
+                                    ${log.gender === g 
+                                        ? (g === 'Male' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-rose-100 border-rose-500 text-rose-700')
+                                        : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                                `}
+                            >
+                                {g === 'Male' ? '♂ 男' : '♀ 女'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Group Toggle */}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => onUpdate(log.id, { isGroup: false })}
+                            className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
+                                ${!log.isGroup ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                            `}
+                        >
+                            <User size={18} /> 個人
+                        </button>
+                        <button
+                            onClick={() => onUpdate(log.id, { isGroup: true })}
+                            className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
+                                ${log.isGroup ? 'bg-purple-100 border-purple-500 text-purple-700' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                            `}
+                        >
+                            <Users size={18} /> 集団
+                        </button>
+                    </div>
+
+                    {/* Action Select */}
+                    <div className="grid grid-cols-4 gap-2">
+                        {(['Pass', 'Look', 'Stop', 'Use'] as const).map(act => (
+                            <button
+                                key={act}
+                                onClick={() => onUpdate(log.id, { action: act })}
+                                className={`py-2 rounded-lg text-xs font-bold border-2 flex flex-col items-center gap-1 transition-colors
+                                    ${log.action === act 
+                                        ? 'border-slate-800 bg-slate-100 dark:bg-slate-700 dark:border-white opacity-100 ring-2 ring-offset-1 ring-slate-400' 
+                                        : 'border-transparent bg-slate-50 dark:bg-slate-700 opacity-60 hover:opacity-100'}
+                                `}
+                            >
+                                {ACTION_CONFIG[act].icon}
+                                {act}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Note Input */}
+                    <div>
+                        <label className="text-xs font-bold opacity-70 mb-1 block">個人メモ / Note</label>
+                        <input 
+                            type="text" 
+                            value={log.note}
+                            onChange={(e) => onUpdate(log.id, { note: e.target.value })}
+                            placeholder="特徴など..."
+                            className={`w-full p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors
+                                ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'}
+                            `}
+                        />
+                    </div>
+
+                    <div className="pt-4 flex gap-3 border-t border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={onClose}
+                            className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors"
+                        >
+                            完了
+                        </button>
+                        <button 
+                            onClick={() => onDelete(log.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        >
+                            <Trash2 size={24} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 export default function App() {
@@ -366,7 +676,7 @@ export default function App() {
     const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
     return [
-      `# Shikakeology Data Export (v4.5)`,
+      `# Shikakeology Data Export (v4.6)`,
       `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       `# Session Start,${startTimeStr}`,
       `# Session End,${endTimeStr}`,
@@ -445,328 +755,19 @@ export default function App() {
     setActiveTouch(null);
   };
 
-  // --- Components ---
-
-  const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) => {
-      const isMale = gender === 'Male';
-      const labelColor = isMale ? 'text-blue-100' : 'text-rose-100';
-      const icon = isGroup ? <Users size={32} /> : <User size={32} />;
-      
-      return (
-          <div className={`absolute pointer-events-none flex flex-col items-center justify-center opacity-60 scale-75`}>
-              <div className={`w-24 h-24 rounded-full border-4 flex flex-col items-center justify-center mb-2
-                  ${isMale 
-                      ? 'border-blue-300/30 bg-blue-800/20 dark:border-blue-400/30 dark:bg-blue-900/40' 
-                      : 'border-rose-300/30 bg-rose-800/20 dark:border-rose-400/30 dark:bg-rose-900/40'
-                  }`}
-              >
-                 <div className={`${labelColor} opacity-80 mb-1`}>{icon}</div>
-                 <div className={`text-xs font-bold uppercase ${labelColor}`}>{isGroup ? 'Group' : 'Indiv.'}</div>
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center w-48 h-48 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2">
-                  <div className={`absolute top-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}><Eye size={20} /></div>
-                  <div className={`absolute bottom-0 flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}><Hand size={20} /></div>
-                  <div className={`absolute ${isMale ? 'right-0' : 'left-0'} flex flex-col items-center ${isMale ? 'text-blue-200' : 'text-rose-200'}`}>{isMale ? <Footprints size={20} /> : <Footprints size={20} />}</div>
-              </div>
-          </div>
-      );
-  };
-
-  // Guide Modal Component
-  const GuideModal = () => {
-    const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300">
-        <div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200
-            ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
-        `}>
-          {/* Modal Header */}
-          <div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-            <h2 className="font-bold text-lg flex items-center gap-2">
-              <BookOpen size={20} className="text-blue-500"/> ガイドブック
-            </h2>
-            <button onClick={() => setIsGuideOpen(false)} className="p-1 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex border-b border-slate-200 dark:border-slate-700">
-            {[
-              { id: 'theory', label: '理論背景', icon: <Layers size={16}/> },
-              { id: 'usage', label: '使い方', icon: <MousePointer2 size={16}/> },
-              { id: 'install', label: 'インストール', icon: <Smartphone size={16}/> },
-            ].map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id as any)}
-                className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors duration-200
-                  ${tab === t.id 
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' 
-                    : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'}
-                `}
-              >
-                {t.icon}{t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Tab: Theory */}
-            {tab === 'theory' && (
-              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                   仕掛学における関与プロセス
-                </h3>
-                <p className="text-sm leading-relaxed opacity-80">
-                  本アプリは、仕掛け（Shikake）に対する人々の行動変容を記録するために設計されています。
-                  特に、対象への**「関与の深さ（Engagement）」**を以下の4段階のファネル（漏斗）モデルで捉えます。
-                </p>
-
-                <div className={`p-4 rounded-xl border ${settings.darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-                  <ul className="space-y-4">
-                    <li className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-pink-600 text-white flex items-center justify-center font-bold shrink-0">3</div>
-                      <div>
-                        <div className="font-bold text-pink-600">使った (Use)</div>
-                        <div className="text-xs opacity-70">仕掛けに物理的に接触した、または意図された行動を完遂した状態。最も深い関与。</div>
-                      </div>
-                    </li>
-                    <li className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">2</div>
-                      <div>
-                        <div className="font-bold text-emerald-600">止まった (Stop)</div>
-                        <div className="text-xs opacity-70">足を止めて仕掛けを観察した状態。興味・関心が高まっている段階。</div>
-                      </div>
-                    </li>
-                    <li className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold shrink-0">1</div>
-                      <div>
-                        <div className="font-bold text-amber-500">見た (Look)</div>
-                        <div className="text-xs opacity-70">歩きながら視線を向けた、あるいは存在に気づいた状態。</div>
-                      </div>
-                    </li>
-                    <li className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-slate-400 text-white flex items-center justify-center font-bold shrink-0">0</div>
-                      <div>
-                        <div className="font-bold text-slate-500">通行 (Pass)</div>
-                        <div className="text-xs opacity-70">仕掛けの設置エリアを通過した全ての人（分母）。</div>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-                
-                <p className="text-xs opacity-60">
-                  ※ 本アプリで上位の行動（例：Use）を記録すると、下位の行動（Stop, Look）も自動的に記録されたものとしてデータ処理されます。
-                </p>
-
-                <div className="pt-2 border-t dark:border-slate-700">
-                   <a 
-                     href="https://www.shikakeology.org/pdf/SIG-TBC-012-03.pdf" 
-                     target="_blank" 
-                     rel="noreferrer"
-                     className="flex items-center gap-2 text-blue-500 text-sm font-bold hover:underline"
-                   >
-                     <ExternalLink size={14}/> 参考文献: 仕掛学研究会 論文 (PDF)
-                   </a>
-                </div>
-              </div>
-            )}
-
-            {/* Tab: Usage */}
-            {tab === 'usage' && (
-              <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                 <div className="space-y-2">
-                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">画面の見方</h3>
-                    <p className="text-sm opacity-80">
-                        画面は田の字型に4分割されています。対象者の属性に合わせてエリアを長押しします。
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold py-2">
-                        <div className="p-3 bg-rose-100 text-rose-800 rounded">♀ 個人 (左上)</div>
-                        <div className="p-3 bg-blue-100 text-blue-800 rounded">♂ 個人 (右上)</div>
-                        <div className="p-3 bg-rose-200 text-rose-900 rounded">♀ 集団 (左下)</div>
-                        <div className="p-3 bg-blue-200 text-blue-900 rounded">♂ 集団 (右下)</div>
-                    </div>
-                 </div>
-
-                 <div className="space-y-2">
-                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">ジェスチャー操作</h3>
-                    <p className="text-sm opacity-80">
-                        エリアを押したまま、対象者の行動に合わせて指をスライドさせます。
-                    </p>
-                    <ul className="text-sm space-y-2 pl-2">
-                        <li className="flex items-center gap-2"><span className="font-bold">⬆ 上へ:</span> <span className="bg-amber-100 text-amber-800 px-1 rounded">見た (Look)</span></li>
-                        <li className="flex items-center gap-2"><span className="font-bold">⬅➡ 外側へ:</span> <span className="bg-emerald-100 text-emerald-800 px-1 rounded">止まった (Stop)</span></li>
-                        <li className="flex items-center gap-2"><span className="font-bold">⬇ 下へ:</span> <span className="bg-pink-100 text-pink-800 px-1 rounded">使った (Use)</span></li>
-                        <li className="flex items-center gap-2"><span className="font-bold">指を離す:</span> <span className="bg-slate-100 text-slate-800 px-1 rounded">通行のみ (Pass)</span></li>
-                    </ul>
-                 </div>
-                 
-                 <div className="space-y-2">
-                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">修正と保存</h3>
-                    <p className="text-sm opacity-80">
-                        記録ミスは画面下のリストをタップして修正・削除が可能。計測終了後は必ず「保存」を行ってください。CSVとして書き出すことができます。
-                    </p>
-                 </div>
-              </div>
-            )}
-
-            {/* Tab: Install */}
-            {tab === 'install' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className={`p-4 rounded-xl border-l-4 border-blue-500 ${settings.darkMode ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
-                    <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-1">PWA (Progressive Web App)</h3>
-                    <p className="text-xs opacity-80">
-                        このアプリはブラウザで動作しますが、ホーム画面に追加することで、オフラインでも動くネイティブアプリのように使用できます。
-                    </p>
-                </div>
-
-                <div className="space-y-3">
-                    <h3 className="font-bold flex items-center gap-2 border-b pb-2 dark:border-slate-600">
-                        <span className="text-xl">🍎</span> iOS (iPhone/iPad)
-                    </h3>
-                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
-                        <li>Safariでこのページを開きます。</li>
-                        <li className="flex items-center gap-1">画面下部の <Share size={16} className="inline text-blue-500"/> (共有) ボタンをタップ。</li>
-                        <li>メニューをスクロールして<span className="font-bold">「ホーム画面に追加」</span>を選択。</li>
-                        <li>右上の「追加」をタップして完了！</li>
-                    </ol>
-                </div>
-
-                <div className="space-y-3">
-                    <h3 className="font-bold flex items-center gap-2 border-b pb-2 dark:border-slate-600">
-                        <span className="text-xl">🤖</span> Android
-                    </h3>
-                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
-                        <li>Chromeでこのページを開きます。</li>
-                        <li className="flex items-center gap-1">右上の <MoreVertical size={16} className="inline"/> (メニュー) ボタンをタップ。</li>
-                        <li><span className="font-bold">「アプリをインストール」</span>または「ホーム画面に追加」を選択。</li>
-                        <li>確認画面で「インストール」をタップして完了！</li>
-                    </ol>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const EditModal = () => {
-      const log = logs.find(l => l.id === editingLogId);
-      if (!log) return null;
-
-      return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-opacity duration-300">
-              <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200
-                  ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
-              `}>
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold flex items-center gap-2">
-                          <Edit3 size={20} /> 記録を編集
-                      </h3>
-                      <button onClick={() => setEditingLogId(null)} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
-                          <X size={24} />
-                      </button>
-                  </div>
-
-                  <div className="space-y-4">
-                      {/* Gender Select */}
-                      <div className="flex gap-2">
-                          {(['Male', 'Female'] as const).map(g => (
-                              <button
-                                  key={g}
-                                  onClick={() => updateLog(log.id, { gender: g })}
-                                  className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all
-                                      ${log.gender === g 
-                                          ? (g === 'Male' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-rose-100 border-rose-500 text-rose-700')
-                                          : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
-                                  `}
-                              >
-                                  {g === 'Male' ? '♂ 男' : '♀ 女'}
-                              </button>
-                          ))}
-                      </div>
-
-                      {/* Group Toggle */}
-                      <div className="flex gap-2">
-                          <button
-                              onClick={() => updateLog(log.id, { isGroup: false })}
-                              className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
-                                  ${!log.isGroup ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
-                              `}
-                          >
-                              <User size={18} /> 個人
-                          </button>
-                          <button
-                              onClick={() => updateLog(log.id, { isGroup: true })}
-                              className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
-                                  ${log.isGroup ? 'bg-purple-100 border-purple-500 text-purple-700' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
-                              `}
-                          >
-                              <Users size={18} /> 集団
-                          </button>
-                      </div>
-
-                      {/* Action Select */}
-                      <div className="grid grid-cols-4 gap-2">
-                          {(['Pass', 'Look', 'Stop', 'Use'] as const).map(act => (
-                              <button
-                                  key={act}
-                                  onClick={() => updateLog(log.id, { action: act })}
-                                  className={`py-2 rounded-lg text-xs font-bold border-2 flex flex-col items-center gap-1 transition-colors
-                                      ${log.action === act 
-                                          ? 'border-slate-800 bg-slate-100 dark:bg-slate-700 dark:border-white opacity-100 ring-2 ring-offset-1 ring-slate-400' 
-                                          : 'border-transparent bg-slate-50 dark:bg-slate-700 opacity-60 hover:opacity-100'}
-                                  `}
-                              >
-                                  {ACTION_CONFIG[act].icon}
-                                  {act}
-                              </button>
-                          ))}
-                      </div>
-
-                      {/* Note Input */}
-                      <div>
-                          <label className="text-xs font-bold opacity-70 mb-1 block">個人メモ / Note</label>
-                          <input 
-                              type="text" 
-                              value={log.note}
-                              onChange={(e) => updateLog(log.id, { note: e.target.value })}
-                              placeholder="特徴など..."
-                              className={`w-full p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors
-                                  ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'}
-                              `}
-                          />
-                      </div>
-
-                      <div className="pt-4 flex gap-3 border-t border-slate-200 dark:border-slate-700">
-                          <button 
-                              onClick={() => setEditingLogId(null)}
-                              className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors"
-                          >
-                              完了
-                          </button>
-                          <button 
-                              onClick={() => deleteLog(log.id)}
-                              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                          >
-                              <Trash2 size={24} />
-                          </button>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
   return (
     <div className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none transition-colors duration-300
         ${settings.darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-800'}
     `}>
-      {/* Modals */}
-      {editingLogId && <EditModal />}
-      {isGuideOpen && <GuideModal />}
+      {/* Modals - Rendered at top level to prevent focus loss */}
+      <EditModal 
+          log={logs.find(l => l.id === editingLogId)}
+          settings={settings}
+          onClose={() => setEditingLogId(null)}
+          onUpdate={updateLog}
+          onDelete={deleteLog}
+      />
+      {isGuideOpen && <GuideModal settings={settings} onClose={() => setIsGuideOpen(false)} />}
 
       {/* Header - Z-index elevated to 50 */}
       <header className={`px-4 py-2 shadow-sm flex items-center justify-between shrink-0 z-50 h-14 border-b transition-colors duration-300
@@ -775,7 +776,7 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
-                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.5</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.6</div>
             </div>
         </div>
 
@@ -810,7 +811,7 @@ export default function App() {
         >
             <div className="max-w-md mx-auto space-y-6 pb-20">
               
-              {/* New: Guidebook Button */}
+              {/* Guidebook Button */}
               <button 
                 onClick={() => { setIsGuideOpen(true); setIsSettingsOpen(false); triggerFeedback('open', 10); }}
                 className={`w-full py-4 rounded-xl font-bold text-lg shadow-sm flex items-center justify-center gap-3 transition-transform active:scale-95
@@ -823,18 +824,20 @@ export default function App() {
                   アプリの使い方・背景理論
               </button>
 
-              {/* Settings Controls */}
+              {/* Settings Controls - Colors explicitly set to prevent OS dark mode conflicts */}
               <div className="space-y-4">
                   <h3 className="font-bold border-b pb-2 flex items-center gap-2 border-slate-200 dark:border-slate-700"><Settings size={20}/> 環境設定</h3>
+                  
                   {/* Dark Mode */}
-                  <div className="flex justify-between items-center p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+                  <div className={`flex justify-between items-center p-3 rounded-lg ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
                       <div className="flex gap-3 items-center"><Moon size={20} className="text-purple-400"/><span>ナイトモード</span></div>
                       <button onClick={() => setSettings(s => ({...s, darkMode: !s.darkMode}))} className={`w-12 h-6 rounded-full p-1 transition-colors ${settings.darkMode ? 'bg-purple-600' : 'bg-slate-300'}`}>
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings.darkMode ? 'translate-x-6' : ''}`}/>
                       </button>
                   </div>
+                  
                   {/* Sound */}
-                  <div className="flex justify-between items-center p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+                  <div className={`flex justify-between items-center p-3 rounded-lg ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
                       <div className="flex gap-3 items-center"><Volume2 size={20} className="text-green-500"/><span>操作音 (SE)</span></div>
                       <button onClick={() => setSettings(s => ({...s, soundEnabled: !s.soundEnabled}))} className={`w-12 h-6 rounded-full p-1 transition-colors ${settings.soundEnabled ? 'bg-green-600' : 'bg-slate-300'}`}>
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings.soundEnabled ? 'translate-x-6' : ''}`}/>
