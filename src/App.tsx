@@ -2,11 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.6
+ * Shikakeology Action Logger (PWA-ready) v4.7
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.6:
- * - 【重要】EditModalコンポーネントをApp外に移動し、文字入力時の再レンダリングによるフォーカス消失バグを修正。
- * - 環境設定パネルの各項目において、背景色と文字色を明示的にセットで指定し、OSのダークモード設定との競合による視認性低下を防止。
+ * * Update v4.7:
+ * - 【BugFix】EditModal内でのメモ入力をローカルステート化し、1文字ごとに入力が途切れる問題を修正。
+ * - 【UIFix】設定パネル等の配色指定を強化。`color-scheme` プロパティを明示し、OS/ブラウザによる強制色反転との競合を防止。
  */
 
 // --- Type Definitions ---
@@ -119,7 +119,7 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
     }
 };
 
-// --- Sub-Components (Defined outside App to prevent re-render issues) ---
+// --- Sub-Components ---
 
 const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) => {
     const isMale = gender === 'Male';
@@ -151,9 +151,12 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300">
-        <div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200
+        <div 
+            className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200
             ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
-        `}>
+            `}
+            style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }} // Force color scheme
+        >
           <div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <h2 className="font-bold text-lg flex items-center gap-2">
               <BookOpen size={20} className="text-blue-500"/> ガイドブック
@@ -329,10 +332,30 @@ interface EditModalProps {
 }
 
 const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate, onDelete }) => {
+    // Local state for the note input to prevent re-rendering the parent on every keystroke
+    const [localNote, setLocalNote] = useState('');
+
+    // Initialize local state when log changes
+    useEffect(() => {
+        if (log) {
+            setLocalNote(log.note || '');
+        }
+    }, [log]);
+
+    // Handle saving the note when focus is lost or modal is closed (via "Done" button)
+    const handleSaveNote = () => {
+        if (log && localNote !== log.note) {
+            onUpdate(log.id, { note: localNote });
+        }
+    };
+
     if (!log) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-opacity duration-300">
+        <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-opacity duration-300"
+            style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }}
+        >
             <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200
                 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
             `}>
@@ -340,7 +363,10 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                     <h3 className="text-lg font-bold flex items-center gap-2">
                         <Edit3 size={20} /> 記録を編集
                     </h3>
-                    <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <button 
+                        onClick={() => { handleSaveNote(); onClose(); }} 
+                        className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+                    >
                         <X size={24} />
                     </button>
                 </div>
@@ -401,13 +427,14 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                         ))}
                     </div>
 
-                    {/* Note Input */}
+                    {/* Note Input - Using Local State */}
                     <div>
                         <label className="text-xs font-bold opacity-70 mb-1 block">個人メモ / Note</label>
                         <input 
                             type="text" 
-                            value={log.note}
-                            onChange={(e) => onUpdate(log.id, { note: e.target.value })}
+                            value={localNote}
+                            onChange={(e) => setLocalNote(e.target.value)}
+                            onBlur={handleSaveNote}
                             placeholder="特徴など..."
                             className={`w-full p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors
                                 ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'}
@@ -417,7 +444,7 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
 
                     <div className="pt-4 flex gap-3 border-t border-slate-200 dark:border-slate-700">
                         <button 
-                            onClick={onClose}
+                            onClick={() => { handleSaveNote(); onClose(); }}
                             className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors"
                         >
                             完了
@@ -502,8 +529,14 @@ export default function App() {
     localStorage.setItem('shikake_history', JSON.stringify(history));
     localStorage.setItem('shikake_settings', JSON.stringify(settings));
     
-    if (settings.darkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
+    // Also apply to body to ensure consistent background
+    if (settings.darkMode) {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+    } else {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.colorScheme = 'light';
+    }
   }, [logs, sessionInfo, isRecording, history, settings]);
 
   useEffect(() => {
@@ -676,7 +709,7 @@ export default function App() {
     const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
     return [
-      `# Shikakeology Data Export (v4.6)`,
+      `# Shikakeology Data Export (v4.7)`,
       `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       `# Session Start,${startTimeStr}`,
       `# Session End,${endTimeStr}`,
@@ -776,7 +809,7 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
-                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.6</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.7</div>
             </div>
         </div>
 
@@ -801,7 +834,11 @@ export default function App() {
       </header>
 
       {/* Settings Panel (Animated) - Fixed position below header (top-14) */}
-      <div className={`fixed inset-0 top-14 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${isSettingsOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsSettingsOpen(false)}>
+      <div 
+        className={`fixed inset-0 top-14 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${isSettingsOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
+        onClick={() => setIsSettingsOpen(false)}
+        style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }}
+      >
         <div 
             className={`absolute top-0 left-0 w-full p-4 border-b h-full overflow-y-auto transition-transform duration-300 ease-out
               ${settings.darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}
@@ -883,7 +920,10 @@ export default function App() {
         )}
         {isSetupMode && (
              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6 animate-in fade-in duration-300">
-                <div className={`p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
+                <div 
+                    className={`p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}
+                    style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }}
+                >
                     <div className="flex justify-between mb-4"><h2 className="font-bold text-xl">セッション設定</h2><button onClick={() => setIsSetupMode(false)} className="hover:opacity-60"><X/></button></div>
                     <input 
                         type="text" 
@@ -904,7 +944,10 @@ export default function App() {
         )}
         {isFinishing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6 animate-in fade-in duration-300">
-                <div className={`p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
+                <div 
+                    className={`p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}
+                    style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }}
+                >
                     <div className="text-center mb-4"><CheckCircle size={48} className="text-emerald-500 mx-auto mb-2"/><h2 className="font-bold text-xl">終了確認</h2></div>
                     <textarea 
                         className={`w-full p-3 mb-4 border rounded-lg h-20 text-sm resize-none outline-none transition-colors ${settings.darkMode ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'}`} 
