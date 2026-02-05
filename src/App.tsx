@@ -2,11 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.7
+ * Shikakeology Action Logger (PWA-ready) v4.8
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.7:
- * - 【BugFix】EditModal内でのメモ入力をローカルステート化し、1文字ごとに入力が途切れる問題を修正。
- * - 【UIFix】設定パネル等の配色指定を強化。`color-scheme` プロパティを明示し、OS/ブラウザによる強制色反転との競合を防止。
+ * * Update v4.8:
+ * - 【UIFix】設定パネル内の「保存済み履歴」セクションの配色も、OSのダークモード設定との競合を避けるため、背景色と文字色をセットで明示的に指定するように修正。
  */
 
 // --- Type Definitions ---
@@ -155,7 +154,7 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
             className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200
             ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
             `}
-            style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }} // Force color scheme
+            style={{ colorScheme: settings.darkMode ? 'dark' : 'light' }}
         >
           <div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <h2 className="font-bold text-lg flex items-center gap-2">
@@ -809,7 +808,7 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
-                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.7</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.8</div>
             </div>
         </div>
 
@@ -882,18 +881,18 @@ export default function App() {
                   </div>
               </div>
               
-              {/* History */}
+              {/* History - Colors explicitly set to prevent OS dark mode conflicts */}
               <div className="space-y-4">
                   <h3 className="font-bold border-b pb-2 flex items-center gap-2 border-slate-200 dark:border-slate-700"><History size={20}/> 保存済み履歴</h3>
                   {history.length === 0 ? <div className="text-center py-4 text-sm opacity-50">履歴なし</div> : (
                       <div className="space-y-3">
                           {history.map(item => (
-                              <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                              <div key={item.id} className={`p-3 rounded-lg border ${settings.darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
                                   <div className="flex justify-between mb-2">
                                       <span className="font-bold text-sm">{new Date(item.date).toLocaleString()}</span>
                                       <button onClick={() => deleteHistoryItem(item.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
                                   </div>
-                                  <button onClick={() => downloadCSV(item.logs, item.sessionInfo, 'history')} className="w-full py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-sm font-bold flex justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
+                                  <button onClick={() => downloadCSV(item.logs, item.sessionInfo, 'history')} className={`w-full py-2 border rounded text-sm font-bold flex justify-center gap-2 transition-colors ${settings.darkMode ? 'bg-slate-700 border-slate-600 hover:bg-slate-600 text-white' : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'}`}>
                                       <Download size={14}/> CSV DL
                                   </button>
                               </div>
