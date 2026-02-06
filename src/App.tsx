@@ -2,11 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.9
+ * Shikakeology Action Logger (PWA-ready) v4.10
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.9:
- * - 【UIFix】EditModal内の各選択ボタン（性別、グループ、行動）において、非アクティブ時の文字色を明示的に指定。
- * OSの強制ダークモードや配色の競合による視認性低下を防止。
+ * * Update v4.10:
+ * - 【Enhancement】CSVファイル名の生成ロジックを変更。
+ * ダウンロード時刻ではなく「実験計測開始時刻」を使用し、さらに「メモの内容（先頭10文字）」を含めることで、ファイル管理を容易に。
+ * ファイル名に使えない文字は自動的にサニタイズされます。
  */
 
 // --- Type Definitions ---
@@ -705,7 +706,7 @@ export default function App() {
     const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
     return [
-      `# Shikakeology Data Export (v4.9)`,
+      `# Shikakeology Data Export (v4.10)`,
       `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       `# Session Start,${startTimeStr}`,
       `# Session End,${endTimeStr}`,
@@ -717,13 +718,36 @@ export default function App() {
     ].join('\n');
   };
 
+  // Improved filename generation
   const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: string) => {
     if (targetLogs.length === 0) { alert('No Data'); return; }
+    
+    // 1. Determine base time (Session Start Time or Current Time)
+    const baseTime = targetInfo.startTime ? new Date(targetInfo.startTime) : new Date();
+    
+    // Format: YYYY-MM-DD_HH-mm-ss
+    const dateStr = baseTime.getFullYear() + '-' +
+        String(baseTime.getMonth() + 1).padStart(2, '0') + '-' +
+        String(baseTime.getDate()).padStart(2, '0') + '_' +
+        String(baseTime.getHours()).padStart(2, '0') + '-' +
+        String(baseTime.getMinutes()).padStart(2, '0') + '-' +
+        String(baseTime.getSeconds()).padStart(2, '0');
+
+    // 2. Sanitize Note (First 10 chars, replace unsafe chars)
+    let noteStr = '';
+    if (targetInfo.note) {
+        // Take first 10 chars, replace spaces/slashes/etc with underscore
+        const rawNote = targetInfo.note.slice(0, 10);
+        noteStr = '_' + rawNote.replace(/[\\/:*?"<>| \n\r]/g, '_');
+    }
+
+    const filename = `${prefix}_${dateStr}${noteStr}.csv`;
+
     const csvContent = generateCSV(targetLogs, targetInfo);
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${prefix}_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -805,7 +829,7 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
-                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.9</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.10</div>
             </div>
         </div>
 
