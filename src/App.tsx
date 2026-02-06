@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.8
+ * Shikakeology Action Logger (PWA-ready) v4.9
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.8:
- * - 【UIFix】設定パネル内の「保存済み履歴」セクションの配色も、OSのダークモード設定との競合を避けるため、背景色と文字色をセットで明示的に指定するように修正。
+ * * Update v4.9:
+ * - 【UIFix】EditModal内の各選択ボタン（性別、グループ、行動）において、非アクティブ時の文字色を明示的に指定。
+ * OSの強制ダークモードや配色の競合による視認性低下を防止。
  */
 
 // --- Type Definitions ---
@@ -321,7 +322,6 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
     );
 };
 
-// EditModal component extracted to prevent focus loss issues on re-renders
 interface EditModalProps {
     log: LogEntry | undefined;
     settings: AppSettings;
@@ -331,17 +331,14 @@ interface EditModalProps {
 }
 
 const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate, onDelete }) => {
-    // Local state for the note input to prevent re-rendering the parent on every keystroke
     const [localNote, setLocalNote] = useState('');
 
-    // Initialize local state when log changes
     useEffect(() => {
         if (log) {
             setLocalNote(log.note || '');
         }
     }, [log]);
 
-    // Handle saving the note when focus is lost or modal is closed (via "Done" button)
     const handleSaveNote = () => {
         if (log && localNote !== log.note) {
             onUpdate(log.id, { note: localNote });
@@ -380,7 +377,7 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                                 className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all
                                     ${log.gender === g 
                                         ? (g === 'Male' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-rose-100 border-rose-500 text-rose-700')
-                                        : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                                        : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'} 
                                 `}
                             >
                                 {g === 'Male' ? '♂ 男' : '♀ 女'}
@@ -393,7 +390,7 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                         <button
                             onClick={() => onUpdate(log.id, { isGroup: false })}
                             className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
-                                ${!log.isGroup ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                                ${!log.isGroup ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'}
                             `}
                         >
                             <User size={18} /> 個人
@@ -401,7 +398,7 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                         <button
                             onClick={() => onUpdate(log.id, { isGroup: true })}
                             className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all flex items-center justify-center gap-2
-                                ${log.isGroup ? 'bg-purple-100 border-purple-500 text-purple-700' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                                ${log.isGroup ? 'bg-purple-100 border-purple-500 text-purple-700' : 'border-slate-200 dark:border-slate-600 opacity-50 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'}
                             `}
                         >
                             <Users size={18} /> 集団
@@ -416,8 +413,8 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                                 onClick={() => onUpdate(log.id, { action: act })}
                                 className={`py-2 rounded-lg text-xs font-bold border-2 flex flex-col items-center gap-1 transition-colors
                                     ${log.action === act 
-                                        ? 'border-slate-800 bg-slate-100 dark:bg-slate-700 dark:border-white opacity-100 ring-2 ring-offset-1 ring-slate-400' 
-                                        : 'border-transparent bg-slate-50 dark:bg-slate-700 opacity-60 hover:opacity-100'}
+                                        ? 'border-slate-800 bg-slate-100 dark:bg-slate-700 dark:border-white opacity-100 ring-2 ring-offset-1 ring-slate-400 text-slate-800 dark:text-slate-100' 
+                                        : 'border-transparent bg-slate-50 dark:bg-slate-700 opacity-60 hover:opacity-100 text-slate-600 dark:text-slate-300'}
                                 `}
                             >
                                 {ACTION_CONFIG[act].icon}
@@ -426,7 +423,7 @@ const EditModal: React.FC<EditModalProps> = ({ log, settings, onClose, onUpdate,
                         ))}
                     </div>
 
-                    {/* Note Input - Using Local State */}
+                    {/* Note Input */}
                     <div>
                         <label className="text-xs font-bold opacity-70 mb-1 block">個人メモ / Note</label>
                         <input 
@@ -708,7 +705,7 @@ export default function App() {
     const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
     return [
-      `# Shikakeology Data Export (v4.7)`,
+      `# Shikakeology Data Export (v4.9)`,
       `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       `# Session Start,${startTimeStr}`,
       `# Session End,${endTimeStr}`,
@@ -808,7 +805,7 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
-                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.8</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.9</div>
             </div>
         </div>
 
