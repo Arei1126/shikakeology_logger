@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle } from 'lucide-react';
+import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle, Save, Power } from 'lucide-react';
 
 /**
  * ============================================================================
- * Shikakeology Action Logger (Refactored v5.7 - Stable)
+ * Shikakeology Action Logger (Refactored v5.8 - Polish)
  * ============================================================================
- * * Update v5.7 Fix:
- * - 【BugFix】履歴削除時の確認ダイアログをwindow.confirmからインラインUIに変更（環境依存の回避）
- * - 【機能修正】0件データのCSVエクスポートを許可（メタデータのみ出力）
- * - 【安定化】履歴削除のステート管理をSettingsPanel内で完結
+ * * Update v5.8 Fix:
+ * - 【UI改善】設定画面のスイッチをトグルスライド式に変更
+ * - 【Doc更新】ガイドブックに操作フロー（開始・終了・保存）と詳細なPWA手順を追加
+ * - 【UX改善】メイン画面のバウンススクロールをCSSで抑制 (overscroll-none)
+ * - 【UX改善】長押しメニュー（コンテキストメニュー）を全域で無効化
  */
 
 // ============================================================================
@@ -298,7 +299,7 @@ const useTouchGesture = (isRecording: boolean, onActionDetermined: (gender: Gend
  * Utility: 詳細CSVエクスポート
  */
 const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: string) => {
-    // v5.7 Fix: 0件でもメタデータのみでエクスポート可能にする（制限解除）
+    // 0件でもメタデータのみでエクスポート可能にする（制限解除）
     // if (targetLogs.length === 0) { alert('No Data to export'); return; }
 
     const generateCSVContent = () => {
@@ -336,7 +337,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
         return [
-          `# Shikakeology Data Export (v5.7)`,
+          `# Shikakeology Data Export (v5.8)`,
           `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
           `# Session Start,${startTimeStr}`,
           `# Session End,${endTimeStr}`,
@@ -372,6 +373,16 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
     document.body.removeChild(link);
 };
 
+// UI Component: Toggle Switch (v5.8 New)
+const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange: () => void }) => (
+    <button 
+        onClick={onChange}
+        className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out flex items-center ${checked ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+    >
+        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${checked ? 'translate-x-6' : 'translate-x-0'}`} />
+    </button>
+);
+
 // Component: Static Guide Icon (Colors restored to v4.11)
 const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) => {
     const isMale = gender === 'Male';
@@ -397,7 +408,7 @@ const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) 
     );
 };
 
-// Component: Guide Modal (With Link, z-index fixed)
+// Component: Guide Modal (With Link, z-index fixed, Enhanced Usage & Install)
 const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () => void }) => {
     const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
 
@@ -417,9 +428,9 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
 
           <div className="flex border-b border-slate-200 dark:border-slate-700">
             {[
-              { id: 'theory', label: '理論背景', icon: <Layers size={16}/> },
+              { id: 'theory', label: '理論', icon: <Layers size={16}/> },
               { id: 'usage', label: '使い方', icon: <MousePointer2 size={16}/> },
-              { id: 'install', label: 'インストール', icon: <Smartphone size={16}/> },
+              { id: 'install', label: 'PWA', icon: <Smartphone size={16}/> },
             ].map(t => (
               <button
                 key={t.id}
@@ -489,10 +500,20 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
               </div>
             )}
             {tab === 'usage' && (
-              <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                  <div className="space-y-2">
-                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">操作方法</h3>
-                    <p className="text-sm opacity-80">画面を長押しして、対象者の行動に合わせて指をスライドさせます。</p>
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600 mb-2">記録の手順</h3>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-90">
+                        <li className="pl-1"><span className="font-bold text-blue-500">開始</span>: 画面上部の <Play size={14} className="inline"/> 開始ボタンをタップし、場所やメモを入力して記録をスタートします。</li>
+                        <li className="pl-1"><span className="font-bold text-slate-500">操作</span>: 画面を長押しし、対象者の行動に合わせて指をスライドさせて記録します（詳細は下図）。</li>
+                        <li className="pl-1"><span className="font-bold text-slate-500">停止</span>: 画面上部の <Square size={14} className="inline"/> 終了ボタンをタップすると記録が停止します（まだ保存されません）。</li>
+                        <li className="pl-1"><span className="font-bold text-emerald-500">保存</span>: 終了確認画面で「保存して終了」をタップすると、履歴にデータが保存されます。</li>
+                    </ol>
+                 </div>
+
+                 <div className="space-y-2">
+                    <h3 className="font-bold border-b pb-1 dark:border-slate-600">タッチ操作</h3>
+                    <p className="text-sm opacity-80">指を置いた位置を基準にスワイプします。</p>
                     <ul className="text-sm space-y-2 pl-2 mt-2">
                         <li className="flex items-center gap-2"><span className="font-bold">⬆ 上へ:</span> <span className="bg-amber-100 text-amber-800 px-1 rounded">見た (Look)</span></li>
                         <li className="flex items-center gap-2"><span className="font-bold">⬅➡ 外側へ:</span> <span className="bg-emerald-100 text-emerald-800 px-1 rounded">止まった (Stop)</span></li>
@@ -505,16 +526,27 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
             {tab === 'install' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className={`p-4 rounded-xl border-l-4 border-blue-500 ${settings.darkMode ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
-                    <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-1">PWA (Progressive Web App)</h3>
-                    <p className="text-xs opacity-80">ホーム画面に追加することで、オフラインでも動くネイティブアプリのように使用できます。</p>
+                    <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-1">アプリとしてインストール (PWA)</h3>
+                    <p className="text-xs opacity-80">ホーム画面に追加することで、オフラインでも動作し、全画面で快適に使用できます。</p>
                 </div>
+                
                 <div className="space-y-3">
-                    <h3 className="font-bold flex items-center gap-2 border-b pb-2">🍎 iOS (Safari)</h3>
-                    <p className="text-sm opacity-80">共有ボタン <Share size={12} className="inline"/> → 「ホーム画面に追加」</p>
+                    <h3 className="font-bold flex items-center gap-2 border-b pb-2">🍎 iOS (iPhone/iPad)</h3>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
+                        <li>Safariの下部にある <Share size={14} className="inline"/> <strong>共有ボタン</strong>をタップします。</li>
+                        <li>メニューを少し下にスクロールします。</li>
+                        <li><strong>「ホーム画面に追加」</strong>を選択します。</li>
+                        <li>右上の<strong>「追加」</strong>をタップして完了です。</li>
+                    </ol>
                 </div>
+                
                 <div className="space-y-3">
                     <h3 className="font-bold flex items-center gap-2 border-b pb-2">🤖 Android (Chrome)</h3>
-                    <p className="text-sm opacity-80">メニュー <MoreVertical size={12} className="inline"/> → 「アプリをインストール」</p>
+                    <ol className="list-decimal list-inside text-sm space-y-2 opacity-80">
+                        <li>Chromeの右上にある <MoreVertical size={14} className="inline"/> <strong>メニューアイコン</strong>をタップします。</li>
+                        <li><strong>「アプリをインストール」</strong>または<strong>「ホーム画面に追加」</strong>を選択します。</li>
+                        <li>画面の指示に従ってインストールします。</li>
+                    </ol>
                 </div>
               </div>
             )}
@@ -603,12 +635,12 @@ const SettingsPanel: React.FC<{
                     <div>
                         <h3 className="font-bold border-b pb-2 mb-2">設定</h3>
                         <div className="flex justify-between items-center p-3 mb-2 rounded bg-slate-100/10 border">
-                            <span>ナイトモード</span>
-                            <button onClick={() => setSettings(s => ({...s, darkMode: !s.darkMode}))} className={`px-3 py-1 rounded transition-colors ${settings.darkMode ? 'bg-purple-600 text-white' : 'bg-slate-300'}`}>{settings.darkMode ? 'ON' : 'OFF'}</button>
+                            <span className="flex items-center gap-2"><Moon size={18}/> ナイトモード</span>
+                            <ToggleSwitch checked={settings.darkMode} onChange={() => setSettings(s => ({...s, darkMode: !s.darkMode}))} />
                         </div>
                         <div className="flex justify-between items-center p-3 rounded bg-slate-100/10 border">
-                            <span>操作音</span>
-                            <button onClick={() => setSettings(s => ({...s, soundEnabled: !s.soundEnabled}))} className={`px-3 py-1 rounded transition-colors ${settings.soundEnabled ? 'bg-green-600 text-white' : 'bg-slate-300'}`}>{settings.soundEnabled ? 'ON' : 'OFF'}</button>
+                            <span className="flex items-center gap-2"><Volume2 size={18}/> 操作音</span>
+                            <ToggleSwitch checked={settings.soundEnabled} onChange={() => setSettings(s => ({...s, soundEnabled: !s.soundEnabled}))} />
                         </div>
                     </div>
                     <div>
@@ -736,6 +768,7 @@ export default function App() {
   };
 
   const handleArchive = () => {
+      // 0件でも保存OKになったので、戻り値チェックは削除
       logger.archiveSession();
       setUiState(prev => ({ ...prev, mode: 'idle' }));
       trigger('success', [50, 100]);
@@ -747,13 +780,17 @@ export default function App() {
   const borderColor = darkMode ? 'border-slate-700' : 'border-slate-200';
 
   return (
-    <div className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none transition-colors duration-300 ${baseBg}`}>
+    // v5.8 Fix: overscroll-noneを追加して画面の引っ張りを抑制。onContextMenuで長押しメニューをブロック。
+    <div 
+        className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none overscroll-none transition-colors duration-300 ${baseBg}`}
+        onContextMenu={(e) => e.preventDefault()}
+    >
       
       {/* --- HEADER --- */}
       <header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
         <div>
             <div className="font-bold text-lg">行動記録ロガー</div>
-            <div className="text-[10px] font-mono opacity-50">Refactored v5.7</div>
+            <div className="text-[10px] font-mono opacity-50">Refactored v5.8</div>
         </div>
         <div className="flex gap-2">
             {uiState.mode === 'idle' && (
