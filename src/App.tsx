@@ -2,12 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Sun, Smartphone, Archive, History, CheckCircle, X, Users, Edit3, Volume2, VolumeX, Save, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2 } from 'lucide-react';
 
 /**
- * Shikakeology Action Logger (PWA-ready) v4.10
+ * Shikakeology Action Logger (PWA-ready) v4.11
  * 仕掛学に基づく行動観察用ロガー
- * * Update v4.10:
- * - 【Enhancement】CSVファイル名の生成ロジックを変更。
- * ダウンロード時刻ではなく「実験計測開始時刻」を使用し、さらに「メモの内容（先頭10文字）」を含めることで、ファイル管理を容易に。
- * ファイル名に使えない文字は自動的にサニタイズされます。
+ * * Update v4.11:
+ * - 【BugFix】Web Audio APIの実装を修正。AudioContextをシングルトン（単一インスタンス）化し、
+ * 再生ごとにインスタンスを生成することで発生するブラウザのリソース制限（音が出なくなる問題）を解決。
+ * - ユーザーインタラクション時にAudioContextをresumeする処理を追加し、モバイルブラウザでの自動再生ポリシーに対応。
  */
 
 // --- Type Definitions ---
@@ -59,13 +59,30 @@ const ACTION_CONFIG = {
   Use:  { label: '使った (Use)', color: 'bg-pink-600', ringColor: '#db2777', icon: <Hand size={24} /> },
 };
 
-// --- Audio Helper ---
+// --- Audio Helper (Singleton Pattern) ---
+// Global variable to hold the single AudioContext instance
+let audioCtx: AudioContext | null = null;
+
+const getAudioContext = () => {
+    if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+        }
+    }
+    return audioCtx;
+};
+
 const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
     try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContext) return;
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        // Ensure context is running (required for mobile browsers after user interaction)
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(e => console.error("Audio resume failed", e));
+        }
         
-        const ctx = new AudioContext();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         
@@ -75,6 +92,7 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
         const now = ctx.currentTime;
         
         if (type === 'record') {
+            // Android-like "Tick" / "Click" (Hard, Short)
             osc.type = 'sine';
             osc.frequency.setValueAtTime(800, now);
             osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.05);
@@ -83,6 +101,7 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.05);
         } else if (type === 'undo') {
+            // "Swoosh" / Reverse feel
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(200, now);
             osc.frequency.linearRampToValueAtTime(100, now + 0.1);
@@ -91,6 +110,7 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.1);
         } else if (type === 'open') {
+            // "Pop" / Soft modal open
             osc.type = 'sine';
             osc.frequency.setValueAtTime(400, now);
             osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
@@ -99,6 +119,7 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.15);
         } else if (type === 'delete') {
+            // Low thud
             osc.type = 'square';
             osc.frequency.setValueAtTime(100, now);
             osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
@@ -107,6 +128,7 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.1);
         } else if (type === 'success') {
+            // Bright chime
             osc.type = 'sine';
             osc.frequency.setValueAtTime(523.25, now);
             osc.frequency.setValueAtTime(1046.5, now + 0.1); // Octave up
@@ -115,6 +137,8 @@ const playTone = (type: 'record' | 'undo' | 'open' | 'delete' | 'success') => {
             osc.start(now);
             osc.stop(now + 0.3);
         }
+        
+        // Clean up oscillator node after playing (automatic by GC, but stop is essential)
     } catch (e) {
         console.error("Audio playback failed", e);
     }
@@ -829,7 +853,7 @@ export default function App() {
         <div className="flex items-center gap-2">
             <div className="leading-tight">
                 <div className={`font-bold text-lg ${settings.darkMode ? 'text-slate-100' : 'text-slate-800'}`}>行動記録ロガー</div>
-                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.10</div>
+                <div className={`text-[10px] font-mono tracking-wider ${settings.darkMode ? 'text-slate-400' : 'text-slate-500'}`}>SHIKAKEOLOGY v4.11</div>
             </div>
         </div>
 
