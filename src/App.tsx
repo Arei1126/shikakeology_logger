@@ -1,13 +1,21 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle, Save, Power } from 'lucide-react';
+import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle, Save, Power, Sparkles, Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 /**
  * ============================================================================
- * Shikakeology Action Logger (Refactored v5.9 - Polished UI)
+ * Shikakeology Action Logger (Refactored v5.12 - AI Toggle)
  * ============================================================================
- * * Update v5.9 Fix:
- * - 【UI微修正】ヘッダーの開始・終了ボタン内のアイコンとテキストの垂直位置ズレを修正 (items-center追加)
+ * * Update v5.12 Features:
+ * - 【機能制限】Gemini API連携機能をフラグ管理に変更。
+ * - `ENABLE_AI_FEATURES` を false にすることで、AI関連のUIとロジックを完全に隠蔽。
+ * - 関連コードを削除しやすいようにブロック化。
  */
+
+// ▼▼▼▼▼▼▼▼▼▼ AI機能設定 ▼▼▼▼▼▼▼▼▼▼
+// 機能を有効にする場合は true、無効にする（削除する）場合は false に設定してください。
+const ENABLE_AI_FEATURES = false;
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 // ============================================================================
 // 1. Type Definitions & Constants
@@ -18,13 +26,12 @@ type Gender = 'Male' | 'Female';
 
 interface LogEntry {
   id: string;
-  timestamp: string; // ISO String
+  timestamp: string;
   unixTime: number;
   gender: Gender;
   isGroup: boolean;
   action: ActionType;
   note: string;
-  // Shikakeology Logic Flags
   isPass: boolean;
   isLook: boolean;
   isStop: boolean;
@@ -51,7 +58,6 @@ interface AppSettings {
   darkMode: boolean;
 }
 
-// カラーパレットの調整
 const ACTION_CONFIG = {
   Pass: { label: '通行 (Pass)', color: 'bg-slate-500 dark:bg-slate-600', ringColor: '#64748b', icon: <User size={24} /> },
   Look: { label: '見た (Look)', color: 'bg-orange-600', ringColor: '#ea580c', icon: <Eye size={24} /> },
@@ -60,7 +66,116 @@ const ACTION_CONFIG = {
 };
 
 // ============================================================================
-// 2. Custom Hooks (Logic)
+// 2. AI Related Logic & Components (Start)
+// ※ AI機能が不要な場合は、このブロック(Start〜End)を全て削除またはコメントアウトしても動作します。
+// ============================================================================
+
+const useGeminiAnalysis = () => {
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    // AI機能が無効の場合はダミーの関数を返す
+    if (!ENABLE_AI_FEATURES) {
+        return { analyzeSession: async () => {}, isAnalyzing: false, analysisResult: null, error: null, clearResult: () => {} };
+    }
+
+    const callGemini = async (prompt: string, retries = 3, delay = 1000): Promise<string> => {
+        const apiKey = ""; // 注意: クライアントサイドでのAPIキー使用はセキュリティリスクがあります
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error(`API Error: ${response.status}`);
+            const data = await response.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text || "No analysis generated.";
+        } catch (err: any) {
+            if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return callGemini(prompt, retries - 1, delay * 2);
+            }
+            throw err;
+        }
+    };
+
+    const analyzeSession = useCallback(async (logs: LogEntry[], sessionInfo: SessionInfo) => {
+        setIsAnalyzing(true);
+        setAnalysisResult(null);
+        setError(null);
+
+        try {
+            const summary = logs.map(l => 
+                `${new Date(l.unixTime).toLocaleTimeString()}: ${l.gender === 'Male' ? 'M' : 'F'}${l.isGroup ? '(Grp)' : '(Sgl)'} -> ${l.action}`
+            ).join('\n');
+
+            const total = logs.length;
+            const passCount = logs.filter(l => l.action === 'Pass').length;
+            const lookCount = logs.filter(l => l.action === 'Look').length;
+            const stopCount = logs.filter(l => l.action === 'Stop').length;
+            const useCount = logs.filter(l => l.action === 'Use').length;
+
+            const systemPrompt = `
+仕掛学（Shikakeology）の専門家として、以下の行動ログを分析し日本語で短いレポートを作成してください（Markdown）。
+## 分析観点
+1. 全体サマリー
+2. ファネル分析 (Pass->Look->Stop->Use)
+3. 属性別の傾向
+4. 改善アドバイス
+
+## データ
+場所: ${sessionInfo.location}, メモ: ${sessionInfo.note}
+Total: ${total}, Pass: ${passCount}, Look: ${lookCount}, Stop: ${stopCount}, Use: ${useCount}
+ログ:
+${summary.slice(0, 10000)}
+`;
+            const result = await callGemini(systemPrompt);
+            setAnalysisResult(result);
+        } catch (err: any) {
+            console.error(err);
+            setError("Error");
+        } finally {
+            setIsAnalyzing(false);
+        }
+    }, []);
+
+    return { analyzeSession, isAnalyzing, analysisResult, error, clearResult: () => setAnalysisResult(null) };
+};
+
+const AnalysisModal = ({ result, onClose, settings }: { result: string, onClose: () => void, settings: AppSettings }) => {
+    if (!ENABLE_AI_FEATURES) return null;
+    return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className={`w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
+                <div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-100 bg-slate-50'}`}>
+                    <h2 className="font-bold text-lg flex items-center gap-2 text-indigo-500">
+                        <Sparkles size={20} className="fill-indigo-500"/> AI分析レポート
+                    </h2>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 text-sm leading-relaxed overscroll-contain">
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown>{result}</ReactMarkdown>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+// ============================================================================
+// AI Related Logic & Components (End)
+// ============================================================================
+
+
+// ============================================================================
+// 3. Main Custom Hooks
 // ============================================================================
 
 const useAudioFeedback = (enabled: boolean, hapticsEnabled: boolean) => {
@@ -289,16 +404,13 @@ const useTouchGesture = (isRecording: boolean, onActionDetermined: (gender: Gend
 };
 
 // ============================================================================
-// 3. Sub-Components (UI)
+// 4. Sub-Components (UI)
 // ============================================================================
 
 /**
  * Utility: 詳細CSVエクスポート
  */
 const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: string) => {
-    // 0件でもメタデータのみでエクスポート可能にする（制限解除）
-    // if (targetLogs.length === 0) { alert('No Data to export'); return; }
-
     const generateCSVContent = () => {
         const headers = [
             'ID', 'Timestamp_ISO', 'Timestamp_JST', 'UnixTime', 
@@ -334,7 +446,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
         return [
-          `# Shikakeology Data Export (v5.8)`,
+          `# Shikakeology Data Export (v5.12)`,
           `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
           `# Session Start,${startTimeStr}`,
           `# Session End,${endTimeStr}`,
@@ -370,7 +482,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
     document.body.removeChild(link);
 };
 
-// UI Component: Toggle Switch (v5.8 New)
+// UI Component: Toggle Switch
 const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange: () => void }) => (
     <button 
         onClick={onChange}
@@ -380,7 +492,7 @@ const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange: () =>
     </button>
 );
 
-// Component: Static Guide Icon (Colors restored to v4.11)
+// Component: Static Guide Icon
 const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) => {
     const isMale = gender === 'Male';
     const labelColor = isMale ? 'text-blue-100' : 'text-rose-100';
@@ -405,7 +517,7 @@ const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) 
     );
 };
 
-// Component: Guide Modal (With Link, z-index fixed, Enhanced Usage & Install)
+// Component: Guide Modal
 const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () => void }) => {
     const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
 
@@ -443,7 +555,7 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
             ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 overscroll-contain">
             {tab === 'theory' && (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <h3 className="text-xl font-bold flex items-center gap-2">仕掛学における関与プロセス</h3>
@@ -553,7 +665,7 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
     );
 };
 
-// Component: Edit Modal (Animated)
+// Component: Edit Modal
 const EditModal: React.FC<{ 
     log: LogEntry | undefined, 
     darkMode: boolean, 
@@ -605,7 +717,7 @@ const EditModal: React.FC<{
     );
 };
 
-// Component: Settings & History Panel (Fullscreen Modal to prevent Header interaction)
+// Component: Settings & History Panel
 const SettingsPanel: React.FC<{
     isOpen: boolean,
     onClose: () => void,
@@ -613,9 +725,9 @@ const SettingsPanel: React.FC<{
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>,
     history: ArchivedSession[],
     onDeleteHistory: (id: string) => void,
-    onOpenGuide: () => void
-}> = ({ isOpen, onClose, settings, setSettings, history, onDeleteHistory, onOpenGuide }) => {
-    // v5.7 Change: 履歴削除の確認状態を管理するローカルステート
+    onOpenGuide: () => void,
+    onAnalyze: (logs: LogEntry[], info: SessionInfo) => void
+}> = ({ isOpen, onClose, settings, setSettings, history, onDeleteHistory, onOpenGuide, onAnalyze }) => {
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
     if (!isOpen) return null;
@@ -627,7 +739,7 @@ const SettingsPanel: React.FC<{
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
                 </div>
 
-                <div className="space-y-6 pb-20 overflow-y-auto flex-1">
+                <div className="space-y-6 pb-20 overflow-y-auto flex-1 overscroll-contain">
                     <button onClick={onOpenGuide} className="w-full py-4 rounded-xl font-bold bg-slate-100 text-slate-800 flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors active:scale-95 transform"><BookOpen className="text-blue-500"/> ガイドブック</button>
                     <div>
                         <h3 className="font-bold border-b pb-2 mb-2">設定</h3>
@@ -651,7 +763,6 @@ const SettingsPanel: React.FC<{
                                             <div className="text-xs opacity-60">{h.logs.length} records</div>
                                         </div>
                                         
-                                        {/* v5.7 Fix: インラインでの削除確認UI */}
                                         {deleteConfirmId === h.id ? (
                                             <div className="flex gap-2 animate-in fade-in slide-in-from-right-5 duration-200">
                                                 <button 
@@ -671,7 +782,18 @@ const SettingsPanel: React.FC<{
                                                 </button>
                                             </div>
                                         ) : (
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-1.5">
+                                                {/* AI Analysis Button (Conditionally Rendered) */}
+                                                {ENABLE_AI_FEATURES && (
+                                                    <button 
+                                                        onClick={() => onAnalyze(h.logs, h.sessionInfo)}
+                                                        className="p-2 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition-colors flex items-center justify-center"
+                                                        title="AI分析"
+                                                    >
+                                                        <Sparkles size={16}/>
+                                                        <span className="text-[10px] font-bold ml-1 hidden sm:inline">分析</span>
+                                                    </button>
+                                                )}
                                                 <button onClick={() => downloadCSV(h.logs, h.sessionInfo, 'history')} className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"><Download size={16}/></button>
                                                 <button 
                                                     onClick={() => setDeleteConfirmId(h.id)} 
@@ -698,7 +820,7 @@ const SettingsPanel: React.FC<{
 };
 
 // ============================================================================
-// 4. Main Application (App.tsx)
+// 5. Main Application (App.tsx)
 // ============================================================================
 
 export default function App() {
@@ -716,6 +838,7 @@ export default function App() {
   const { trigger } = useAudioFeedback(settings.soundEnabled, settings.hapticsEnabled);
   const logger = useShikakeLogger();
   const { logs, sessionInfo, history, isRecording } = logger;
+  const ai = useGeminiAnalysis(); // Gemini Hook
 
   // Touch Logic Integration
   const { activeTouch, handleTouchStart, handleTouchMove, handleTouchEnd } = useTouchGesture(
@@ -738,7 +861,7 @@ export default function App() {
   // --- Auto Scroll Ref ---
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto Scroll Effect: Scroll to bottom when logs change, BUT NOT when editing
+  // Auto Scroll Effect
   useEffect(() => {
     if (!uiState.editingLogId) {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -765,7 +888,6 @@ export default function App() {
   };
 
   const handleArchive = () => {
-      // 0件でも保存OKになったので、戻り値チェックは削除
       logger.archiveSession();
       setUiState(prev => ({ ...prev, mode: 'idle' }));
       trigger('success', [50, 100]);
@@ -777,7 +899,6 @@ export default function App() {
   const borderColor = darkMode ? 'border-slate-700' : 'border-slate-200';
 
   return (
-    // v5.8 Fix: overscroll-noneを追加して画面の引っ張りを抑制。onContextMenuで長押しメニューをブロック。
     <div 
         className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none overscroll-none transition-colors duration-300 ${baseBg}`}
         onContextMenu={(e) => e.preventDefault()}
@@ -787,7 +908,7 @@ export default function App() {
       <header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
         <div>
             <div className="font-bold text-lg">行動記録ロガー</div>
-            <div className="text-[10px] font-mono opacity-50">Refactored v5.8</div>
+            <div className="text-[10px] font-mono opacity-50">Refactored v5.12</div>
         </div>
         <div className="flex gap-2">
             {uiState.mode === 'idle' && (
@@ -807,7 +928,19 @@ export default function App() {
       </header>
 
       {/* --- OVERLAYS & MODALS --- */}
-      {/* 1. Idle Mode Overlay (Welcome Screen) */}
+      {/* 1. Analysis Modal (Conditionally Rendered by Flag) */}
+      {ENABLE_AI_FEATURES && ai.isAnalyzing && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 animate-in fade-in">
+              <div className={`p-8 rounded-3xl flex flex-col items-center gap-4 ${darkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-800'}`}>
+                  <Loader2 size={48} className="animate-spin text-indigo-500"/>
+                  <div className="font-bold text-lg animate-pulse">AIが行動ログを分析中...</div>
+              </div>
+          </div>
+      )}
+      
+      {ENABLE_AI_FEATURES && ai.analysisResult && <AnalysisModal result={ai.analysisResult} onClose={ai.clearResult} settings={settings} />}
+
+      {/* 2. Idle Mode Overlay */}
       {uiState.mode === 'idle' && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6 animate-in fade-in duration-300">
               <div className={`p-8 rounded-3xl text-center w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-300 ${darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
@@ -820,7 +953,7 @@ export default function App() {
           </div>
       )}
 
-      {/* 2. Setup Overlay */}
+      {/* 3. Setup Overlay */}
       {uiState.mode === 'setup' && (
          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6 animate-in fade-in duration-300">
             <div className={`p-6 rounded-3xl w-full max-w-sm shadow-xl animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
@@ -837,7 +970,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. Finishing Overlay (with Edit) */}
+      {/* 4. Finishing Overlay */}
       {uiState.mode === 'finishing' && (
          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-md px-6 animate-in fade-in duration-300">
             <div className={`p-6 rounded-3xl w-full max-w-sm shadow-xl animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
@@ -865,6 +998,7 @@ export default function App() {
           settings={settings} setSettings={setSettings}
           history={history} onDeleteHistory={logger.deleteHistory}
           onOpenGuide={() => setUiState(p => ({...p, isGuideOpen: true}))}
+          onAnalyze={ai.analyzeSession} 
       />
       
       <EditModal 
@@ -877,7 +1011,7 @@ export default function App() {
 
       {/* --- MAIN TOUCH AREA --- */}
       <main className="flex-1 flex w-full relative">
-        {/* Dynamic Action Ring (Fixed Position at Touch Start) */}
+        {/* Dynamic Action Ring */}
         {activeTouch && (
             <div className="fixed pointer-events-none z-50 transform -translate-x-1/2 -translate-y-1/2 animate-in fade-in zoom-in duration-100" style={{ left: activeTouch.startX, top: activeTouch.startY }}>
                <div className={`rounded-full flex items-center justify-center border-2 border-white/50 w-40 h-40 ${ACTION_CONFIG[activeTouch.selectedAction].color} shadow-2xl transition-colors duration-200`}>
@@ -890,14 +1024,14 @@ export default function App() {
         )}
 
         <div className="flex-1 flex flex-col border-r border-white/10">
-            {/* Female Zone (Colors restored to v4.11) */}
+            {/* Female Zone */}
             <TouchZone gender="Female" isGroup={false} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
                 color="bg-rose-100" darkColor="bg-rose-900/30" idleColor="bg-rose-50" idleDarkColor="bg-rose-900/10" />
             <TouchZone gender="Female" isGroup={true} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
                 color="bg-rose-200" darkColor="bg-rose-900/50" idleColor="bg-rose-100" idleDarkColor="bg-rose-900/20" />
         </div>
         <div className="flex-1 flex flex-col border-l border-white/10">
-            {/* Male Zone (Colors restored to v4.11) */}
+            {/* Male Zone */}
             <TouchZone gender="Male" isGroup={false} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
                 color="bg-blue-100" darkColor="bg-blue-900/30" idleColor="bg-blue-50" idleDarkColor="bg-blue-900/10" />
             <TouchZone gender="Male" isGroup={true} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
@@ -916,7 +1050,7 @@ export default function App() {
                   <RotateCcw size={14} /> Undo
               </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          <div className="flex-1 overflow-y-auto p-2 space-y-2 overscroll-contain">
               {logs.map((log, i) => (
                   <div key={log.id} onClick={() => setUiState(p => ({...p, editingLogId: log.id}))} 
                     className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer animate-in slide-in-from-bottom-2 fade-in duration-200 hover:scale-[1.01] active:scale-95 transition-transform ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-100'}`}>
