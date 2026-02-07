@@ -3,13 +3,10 @@ import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Foo
 
 /**
  * ============================================================================
- * Shikakeology Action Logger (Refactored v5.8 - Polish)
+ * Shikakeology Action Logger (Refactored v5.9 - Polished UI)
  * ============================================================================
- * * Update v5.8 Fix:
- * - 【UI改善】設定画面のスイッチをトグルスライド式に変更
- * - 【Doc更新】ガイドブックに操作フロー（開始・終了・保存）と詳細なPWA手順を追加
- * - 【UX改善】メイン画面のバウンススクロールをCSSで抑制 (overscroll-none)
- * - 【UX改善】長押しメニュー（コンテキストメニュー）を全域で無効化
+ * * Update v5.9 Fix:
+ * - 【UI微修正】ヘッダーの開始・終了ボタン内のアイコンとテキストの垂直位置ズレを修正 (items-center追加)
  */
 
 // ============================================================================
@@ -794,12 +791,12 @@ export default function App() {
         </div>
         <div className="flex gap-2">
             {uiState.mode === 'idle' && (
-                <button onClick={handleStartSetup} className="flex gap-2 bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-md hover:bg-blue-700 active:scale-95 transition-all">
+                <button onClick={handleStartSetup} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-md hover:bg-blue-700 active:scale-95 transition-all">
                     <Play size={18} /> 開始
                 </button>
             )}
             {uiState.mode === 'recording' && (
-                <button onClick={handleStopRecording} className="flex gap-2 bg-slate-700 text-white px-4 py-2 rounded-full font-bold shadow-md animate-pulse active:scale-95 transition-all">
+                <button onClick={handleStopRecording} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-full font-bold shadow-md animate-pulse active:scale-95 transition-all">
                     <Square size={18} /> 終了
                 </button>
             )}
