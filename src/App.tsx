@@ -3,12 +3,13 @@ import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Foo
 
 /**
  * ============================================================================
- * Shikakeology Action Logger (Refactored v5.3)
+ * Shikakeology Action Logger (Refactored v5.5)
  * ============================================================================
- * * Update v5.3:
- * - 「記録開始（アイドル状態）」のオーバーレイUIを復活
- * - 各種UIインタラクションへのアニメーション（Micro-interactions）の追加
- * - アニメーションはTailwind CSSのクラスのみで実装し、ロジックの複雑化を回避
+ * * Update v5.5:
+ * - 【UI修正】4象限の背景色を v4.11 準拠（淡い色）に戻し、アイコンの視認性を向上
+ * - 【UI修正】設定画面を全画面モーダル化（ヘッダーへの誤操作防止）
+ * - 【機能修正】データ0件でも保存・終了を許可（再開不可バグの解消）
+ * - 【機能修正】ガイドブックへの論文リンク復活
  */
 
 // ============================================================================
@@ -53,9 +54,10 @@ interface AppSettings {
   darkMode: boolean;
 }
 
+// カラーパレットの調整
 const ACTION_CONFIG = {
-  Pass: { label: '通行 (Pass)', color: 'bg-slate-400 dark:bg-slate-600', ringColor: '#94a3b8', icon: <User size={24} /> },
-  Look: { label: '見た (Look)', color: 'bg-amber-500', ringColor: '#f59e0b', icon: <Eye size={24} /> },
+  Pass: { label: '通行 (Pass)', color: 'bg-slate-500 dark:bg-slate-600', ringColor: '#64748b', icon: <User size={24} /> },
+  Look: { label: '見た (Look)', color: 'bg-orange-600', ringColor: '#ea580c', icon: <Eye size={24} /> },
   Stop: { label: '止まった (Stop)', color: 'bg-emerald-600', ringColor: '#059669', icon: <Footprints size={24} /> },
   Use:  { label: '使った (Use)', color: 'bg-pink-600', ringColor: '#db2777', icon: <Hand size={24} /> },
 };
@@ -86,7 +88,6 @@ const useAudioFeedback = (enabled: boolean, hapticsEnabled: boolean) => {
             gain.connect(ctx.destination);
             const now = ctx.currentTime;
             
-            // Simple Tone Mapping
             if (type === 'record') {
                 osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.05);
                 gain.gain.setValueAtTime(0.3, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
@@ -202,7 +203,7 @@ const useShikakeLogger = () => {
     }, []);
 
     const archiveSession = useCallback(() => {
-        if (logs.length === 0) return false;
+        // v5.5 Change: 0件でも保存を許可する（アラートを出さずに空のセッションとして保存）
         const newArchive: ArchivedSession = {
             id: crypto.randomUUID(),
             date: new Date().toISOString(),
@@ -296,10 +297,11 @@ const useTouchGesture = (isRecording: boolean, onActionDetermined: (gender: Gend
 // ============================================================================
 
 /**
- * Utility: 詳細CSVエクスポート（元のアプリと同一の仕様）
+ * Utility: 詳細CSVエクスポート
  */
 const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: string) => {
-    if (targetLogs.length === 0) { alert('No Data'); return; }
+    // 0件の場合はスキップ（または空CSV）だが、ボタンが押されたということは意図があるはずなのでアラート
+    if (targetLogs.length === 0) { alert('No Data to export'); return; }
 
     const generateCSVContent = () => {
         const headers = [
@@ -336,7 +338,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
         return [
-          `# Shikakeology Data Export (v5.1)`,
+          `# Shikakeology Data Export (v5.5)`,
           `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
           `# Session Start,${startTimeStr}`,
           `# Session End,${endTimeStr}`,
@@ -348,10 +350,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         ].join('\n');
     };
     
-    // 1. Determine base time (Session Start Time or Current Time)
     const baseTime = targetInfo.startTime ? new Date(targetInfo.startTime) : new Date();
-    
-    // Format: YYYY-MM-DD_HH-mm-ss
     const dateStr = baseTime.getFullYear() + '-' +
         String(baseTime.getMonth() + 1).padStart(2, '0') + '-' +
         String(baseTime.getDate()).padStart(2, '0') + '_' +
@@ -359,7 +358,6 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         String(baseTime.getMinutes()).padStart(2, '0') + '-' +
         String(baseTime.getSeconds()).padStart(2, '0');
 
-    // 2. Sanitize Note & Location for Filename
     let metaStr = '';
     if (targetInfo.location) metaStr += `_${targetInfo.location}`;
     if (targetInfo.note) metaStr += `_${targetInfo.note.slice(0, 10)}`;
@@ -376,7 +374,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
     document.body.removeChild(link);
 };
 
-// Component: Static Guide Icon
+// Component: Static Guide Icon (Colors restored to v4.11)
 const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) => {
     const isMale = gender === 'Male';
     const labelColor = isMale ? 'text-blue-100' : 'text-rose-100';
@@ -385,7 +383,10 @@ const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) 
     return (
         <div className={`absolute pointer-events-none flex flex-col items-center justify-center opacity-60 scale-75 animate-in fade-in duration-500`}>
             <div className={`w-24 h-24 rounded-full border-4 flex flex-col items-center justify-center mb-2
-                ${isMale ? 'border-blue-300/30 bg-blue-800/20' : 'border-rose-300/30 bg-rose-800/20'}`}>
+                ${isMale 
+                    ? 'border-blue-300/30 bg-blue-800/20 dark:border-blue-400/30 dark:bg-blue-900/40' 
+                    : 'border-rose-300/30 bg-rose-800/20 dark:border-rose-400/30 dark:bg-rose-900/40'
+                }`}>
                 <div className={`${labelColor} opacity-80 mb-1`}>{icon}</div>
                 <div className={`text-xs font-bold uppercase ${labelColor}`}>{isGroup ? 'Group' : 'Indiv.'}</div>
             </div>
@@ -398,7 +399,7 @@ const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) 
     );
 };
 
-// Component: Guide Modal (Animated)
+// Component: Guide Modal (With Link)
 const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () => void }) => {
     const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
 
@@ -476,6 +477,17 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
                     </li>
                   </ul>
                 </div>
+
+                <div className="pt-2 border-t dark:border-slate-700">
+                   <a 
+                     href="https://www.shikakeology.org/pdf/SIG-TBC-012-03.pdf" 
+                     target="_blank" 
+                     rel="noreferrer"
+                     className="flex items-center gap-2 text-blue-500 text-sm font-bold hover:underline"
+                   >
+                     <ExternalLink size={14}/> 参考文献: 仕掛学研究会 論文 (PDF)
+                   </a>
+                </div>
               </div>
             )}
             {tab === 'usage' && (
@@ -545,7 +557,11 @@ const EditModal: React.FC<{
                      <div className="grid grid-cols-4 gap-2">
                         {(['Pass', 'Look', 'Stop', 'Use'] as const).map(act => (
                             <button key={act} onClick={() => onUpdate(log.id, { action: act })}
-                                className={`py-2 rounded border-2 text-xs font-bold flex flex-col items-center transition-all active:scale-95 ${log.action === act ? 'bg-slate-200 border-slate-500 text-slate-900' : 'opacity-50'}`}>
+                                className={`py-3 rounded-xl border-2 text-xs font-bold flex flex-col items-center transition-all active:scale-95 
+                                ${log.action === act 
+                                    ? `${ACTION_CONFIG[act].color} text-white border-transparent shadow-md transform scale-105` 
+                                    : 'bg-transparent border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 opacity-60 hover:opacity-100'
+                                }`}>
                                 {ACTION_CONFIG[act].icon}{act}
                             </button>
                         ))}
@@ -562,7 +578,7 @@ const EditModal: React.FC<{
     );
 };
 
-// Component: Settings & History Panel (Animated)
+// Component: Settings & History Panel (Fullscreen Modal to prevent Header interaction)
 const SettingsPanel: React.FC<{
     isOpen: boolean,
     onClose: () => void,
@@ -574,9 +590,14 @@ const SettingsPanel: React.FC<{
 }> = ({ isOpen, onClose, settings, setSettings, history, onDeleteHistory, onOpenGuide }) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 top-14 z-40 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
-            <div className={`absolute top-0 left-0 w-full p-4 h-full overflow-y-auto max-w-md shadow-xl animate-in slide-in-from-top-10 duration-300 ${settings.darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}`} onClick={e => e.stopPropagation()}>
-                <div className="space-y-6 pb-20">
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
+            <div className={`absolute inset-y-0 right-0 w-full max-w-md p-4 shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col ${settings.darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}`} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6 border-b pb-4 dark:border-slate-700">
+                    <h2 className="font-bold text-xl flex items-center gap-2"><Settings size={24}/> 設定・履歴</h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
+                </div>
+
+                <div className="space-y-6 pb-20 overflow-y-auto flex-1">
                     <button onClick={onOpenGuide} className="w-full py-4 rounded-xl font-bold bg-slate-100 text-slate-800 flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors active:scale-95 transform"><BookOpen className="text-blue-500"/> ガイドブック</button>
                     <div>
                         <h3 className="font-bold border-b pb-2 mb-2">設定</h3>
@@ -591,18 +612,20 @@ const SettingsPanel: React.FC<{
                     </div>
                     <div>
                         <h3 className="font-bold border-b pb-2 mb-2">履歴</h3>
-                        {history.map(h => (
-                            <div key={h.id} className="p-3 mb-2 rounded border flex justify-between items-center bg-slate-100/5 hover:bg-slate-100/10 transition-colors">
-                                <div>
-                                    <div className="font-bold text-sm">{new Date(h.date).toLocaleString()}</div>
-                                    <div className="text-xs opacity-60">{h.logs.length} records</div>
+                        {history.length === 0 ? <div className="text-center opacity-50 py-4">履歴なし</div> : (
+                            history.map(h => (
+                                <div key={h.id} className="p-3 mb-2 rounded border flex justify-between items-center bg-slate-100/5 hover:bg-slate-100/10 transition-colors">
+                                    <div>
+                                        <div className="font-bold text-sm">{new Date(h.date).toLocaleString()}</div>
+                                        <div className="text-xs opacity-60">{h.logs.length} records</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => downloadCSV(h.logs, h.sessionInfo, 'history')} className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"><Download size={16}/></button>
+                                        <button onClick={() => onDeleteHistory(h.id)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"><Trash2 size={16}/></button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => downloadCSV(h.logs, h.sessionInfo, 'history')} className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"><Download size={16}/></button>
-                                    <button onClick={() => onDeleteHistory(h.id)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"><Trash2 size={16}/></button>
-                                </div>
-                            </div>
-                        ))}
+                            ))
+                        )}
                     </div>
                 </div>
             </div>
@@ -678,12 +701,10 @@ export default function App() {
   };
 
   const handleArchive = () => {
-      if (logger.archiveSession()) {
-          setUiState(prev => ({ ...prev, mode: 'idle' }));
-          trigger('success', [50, 100]);
-      } else {
-          alert('No data');
-      }
+      // 0件でも保存OKになったので、戻り値チェックは削除
+      logger.archiveSession();
+      setUiState(prev => ({ ...prev, mode: 'idle' }));
+      trigger('success', [50, 100]);
   };
 
   // --- Rendering ---
@@ -698,7 +719,7 @@ export default function App() {
       <header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
         <div>
             <div className="font-bold text-lg">行動記録ロガー</div>
-            <div className="text-[10px] font-mono opacity-50">Refactored v5.3</div>
+            <div className="text-[10px] font-mono opacity-50">v5.5</div>
         </div>
         <div className="flex gap-2">
             {uiState.mode === 'idle' && (
@@ -801,14 +822,18 @@ export default function App() {
         )}
 
         <div className="flex-1 flex flex-col border-r border-white/10">
-            {/* Female Zone */}
-            <TouchZone gender="Female" isGroup={false} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} color="bg-rose-100" darkColor="bg-rose-900/30" />
-            <TouchZone gender="Female" isGroup={true} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} color="bg-rose-200" darkColor="bg-rose-900/50" />
+            {/* Female Zone (Colors restored to v4.11) */}
+            <TouchZone gender="Female" isGroup={false} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
+                color="bg-rose-100" darkColor="bg-rose-900/30" idleColor="bg-rose-50" idleDarkColor="bg-rose-900/10" />
+            <TouchZone gender="Female" isGroup={true} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
+                color="bg-rose-200" darkColor="bg-rose-900/50" idleColor="bg-rose-100" idleDarkColor="bg-rose-900/20" />
         </div>
         <div className="flex-1 flex flex-col border-l border-white/10">
-            {/* Male Zone */}
-            <TouchZone gender="Male" isGroup={false} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} color="bg-blue-100" darkColor="bg-blue-900/30" />
-            <TouchZone gender="Male" isGroup={true} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} color="bg-blue-200" darkColor="bg-blue-900/50" />
+            {/* Male Zone (Colors restored to v4.11) */}
+            <TouchZone gender="Male" isGroup={false} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
+                color="bg-blue-100" darkColor="bg-blue-900/30" idleColor="bg-blue-50" idleDarkColor="bg-blue-900/10" />
+            <TouchZone gender="Male" isGroup={true} isRecording={uiState.mode === 'recording'} onStart={handleTouchStart} onMove={handleTouchMove} onEnd={handleTouchEnd} 
+                color="bg-blue-200" darkColor="bg-blue-900/50" idleColor="bg-blue-100" idleDarkColor="bg-blue-900/20" />
         </div>
       </main>
 
@@ -841,14 +866,14 @@ export default function App() {
 }
 
 // --- Helper Component for Touch Zones ---
-const TouchZone = ({ gender, isGroup, isRecording, onStart, onMove, onEnd, color, darkColor }: any) => {
+const TouchZone = ({ gender, isGroup, isRecording, onStart, onMove, onEnd, color, darkColor, idleColor, idleDarkColor }: any) => {
     const isMale = gender === 'Male';
     return (
         <div 
             className={`flex-1 flex items-center justify-center relative touch-none border-b border-white/10 transition-colors duration-200
                 ${isRecording 
                     ? `active:opacity-80 dark:${darkColor} ${color}` 
-                    : 'bg-transparent opacity-50'
+                    : `dark:${idleDarkColor} ${idleColor}`
                 }`}
             onTouchStart={(e) => onStart(e, gender, isGroup)}
             onTouchMove={onMove}
