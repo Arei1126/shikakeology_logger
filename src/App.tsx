@@ -1,15 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone } from 'lucide-react';
+import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle } from 'lucide-react';
 
 /**
  * ============================================================================
- * Shikakeology Action Logger (Refactored v5.5)
+ * Shikakeology Action Logger (Refactored v5.7 - Stable)
  * ============================================================================
- * * Update v5.5:
- * - 【UI修正】4象限の背景色を v4.11 準拠（淡い色）に戻し、アイコンの視認性を向上
- * - 【UI修正】設定画面を全画面モーダル化（ヘッダーへの誤操作防止）
- * - 【機能修正】データ0件でも保存・終了を許可（再開不可バグの解消）
- * - 【機能修正】ガイドブックへの論文リンク復活
+ * * Update v5.7 Fix:
+ * - 【BugFix】履歴削除時の確認ダイアログをwindow.confirmからインラインUIに変更（環境依存の回避）
+ * - 【機能修正】0件データのCSVエクスポートを許可（メタデータのみ出力）
+ * - 【安定化】履歴削除のステート管理をSettingsPanel内で完結
  */
 
 // ============================================================================
@@ -203,7 +202,6 @@ const useShikakeLogger = () => {
     }, []);
 
     const archiveSession = useCallback(() => {
-        // v5.5 Change: 0件でも保存を許可する（アラートを出さずに空のセッションとして保存）
         const newArchive: ArchivedSession = {
             id: crypto.randomUUID(),
             date: new Date().toISOString(),
@@ -300,8 +298,8 @@ const useTouchGesture = (isRecording: boolean, onActionDetermined: (gender: Gend
  * Utility: 詳細CSVエクスポート
  */
 const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: string) => {
-    // 0件の場合はスキップ（または空CSV）だが、ボタンが押されたということは意図があるはずなのでアラート
-    if (targetLogs.length === 0) { alert('No Data to export'); return; }
+    // v5.7 Fix: 0件でもメタデータのみでエクスポート可能にする（制限解除）
+    // if (targetLogs.length === 0) { alert('No Data to export'); return; }
 
     const generateCSVContent = () => {
         const headers = [
@@ -338,7 +336,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
         return [
-          `# Shikakeology Data Export (v5.5)`,
+          `# Shikakeology Data Export (v5.7)`,
           `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
           `# Session Start,${startTimeStr}`,
           `# Session End,${endTimeStr}`,
@@ -399,12 +397,12 @@ const StaticGuide = ({ gender, isGroup }: { gender: Gender, isGroup: boolean }) 
     );
 };
 
-// Component: Guide Modal (With Link)
+// Component: Guide Modal (With Link, z-index fixed)
 const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () => void }) => {
     const [tab, setTab] = useState<'theory' | 'usage' | 'install'>('theory');
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300 animate-in fade-in">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300 animate-in fade-in">
         <div 
             className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200
             ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}
@@ -588,6 +586,9 @@ const SettingsPanel: React.FC<{
     onDeleteHistory: (id: string) => void,
     onOpenGuide: () => void
 }> = ({ isOpen, onClose, settings, setSettings, history, onDeleteHistory, onOpenGuide }) => {
+    // v5.7 Change: 履歴削除の確認状態を管理するローカルステート
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
@@ -614,15 +615,49 @@ const SettingsPanel: React.FC<{
                         <h3 className="font-bold border-b pb-2 mb-2">履歴</h3>
                         {history.length === 0 ? <div className="text-center opacity-50 py-4">履歴なし</div> : (
                             history.map(h => (
-                                <div key={h.id} className="p-3 mb-2 rounded border flex justify-between items-center bg-slate-100/5 hover:bg-slate-100/10 transition-colors">
-                                    <div>
-                                        <div className="font-bold text-sm">{new Date(h.date).toLocaleString()}</div>
-                                        <div className="text-xs opacity-60">{h.logs.length} records</div>
+                                <div key={h.id} className={`p-3 mb-2 rounded border transition-all duration-300 ${deleteConfirmId === h.id ? 'bg-red-50 border-red-200 dark:bg-red-900/20' : 'bg-slate-100/5 border-transparent'} hover:bg-slate-100/10`}>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <div>
+                                            <div className="font-bold text-sm">{new Date(h.date).toLocaleString()}</div>
+                                            <div className="text-xs opacity-60">{h.logs.length} records</div>
+                                        </div>
+                                        
+                                        {/* v5.7 Fix: インラインでの削除確認UI */}
+                                        {deleteConfirmId === h.id ? (
+                                            <div className="flex gap-2 animate-in fade-in slide-in-from-right-5 duration-200">
+                                                <button 
+                                                    onClick={() => setDeleteConfirmId(null)}
+                                                    className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-200 rounded hover:bg-slate-300"
+                                                >
+                                                    キャンセル
+                                                </button>
+                                                <button 
+                                                    onClick={() => {
+                                                        onDeleteHistory(h.id);
+                                                        setDeleteConfirmId(null);
+                                                    }} 
+                                                    className="px-3 py-2 text-xs font-bold text-white bg-red-600 rounded hover:bg-red-700 shadow-sm"
+                                                >
+                                                    削除実行
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => downloadCSV(h.logs, h.sessionInfo, 'history')} className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"><Download size={16}/></button>
+                                                <button 
+                                                    onClick={() => setDeleteConfirmId(h.id)} 
+                                                    className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
+                                                >
+                                                    <Trash2 size={16}/>
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => downloadCSV(h.logs, h.sessionInfo, 'history')} className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"><Download size={16}/></button>
-                                        <button onClick={() => onDeleteHistory(h.id)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"><Trash2 size={16}/></button>
-                                    </div>
+                                    {deleteConfirmId === h.id && (
+                                        <div className="text-[10px] text-red-500 font-bold text-right pt-1 flex items-center justify-end gap-1">
+                                            <AlertTriangle size={12}/> 本当に削除しますか？
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         )}
@@ -701,7 +736,6 @@ export default function App() {
   };
 
   const handleArchive = () => {
-      // 0件でも保存OKになったので、戻り値チェックは削除
       logger.archiveSession();
       setUiState(prev => ({ ...prev, mode: 'idle' }));
       trigger('success', [50, 100]);
@@ -719,7 +753,7 @@ export default function App() {
       <header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
         <div>
             <div className="font-bold text-lg">行動記録ロガー</div>
-            <div className="text-[10px] font-mono opacity-50">v5.5</div>
+            <div className="text-[10px] font-mono opacity-50">Refactored v5.7</div>
         </div>
         <div className="flex gap-2">
             {uiState.mode === 'idle' && (
