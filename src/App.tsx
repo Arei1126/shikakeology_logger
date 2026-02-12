@@ -678,10 +678,10 @@ const EditModal: React.FC<{
     
     // v5.13 Change: 属性選択肢の定義（性別×グループ）
     const GENDER_GROUP_OPTIONS = [
-        { gender: 'Male', isGroup: false, label: '♂ Solo', color: 'bg-blue-100 border-blue-500 text-blue-800' },
-        { gender: 'Male', isGroup: true, label: '♂ Group', color: 'bg-blue-200 border-blue-600 text-blue-900' },
         { gender: 'Female', isGroup: false, label: '♀ Solo', color: 'bg-rose-100 border-rose-500 text-rose-800' },
+        { gender: 'Male', isGroup: false, label: '♂ Solo', color: 'bg-blue-100 border-blue-500 text-blue-800' },
         { gender: 'Female', isGroup: true, label: '♀ Group', color: 'bg-rose-200 border-rose-600 text-rose-900' },
+        { gender: 'Male', isGroup: true, label: '♂ Group', color: 'bg-blue-200 border-blue-600 text-blue-900' },
     ] as const;
 
     if (!log) return null;
