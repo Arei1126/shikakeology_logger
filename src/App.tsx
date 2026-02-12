@@ -4,12 +4,12 @@ import ReactMarkdown from 'react-markdown';
 
 /**
  * ============================================================================
- * Shikakeology Action Logger (Refactored v5.12 - AI Toggle)
+ * Shikakeology Action Logger (Refactored v5.13 - Edit Enhanced)
  * ============================================================================
- * * Update v5.12 Features:
- * - 【機能制限】Gemini API連携機能をフラグ管理に変更。
- * - `ENABLE_AI_FEATURES` を false にすることで、AI関連のUIとロジックを完全に隠蔽。
- * - 関連コードを削除しやすいようにブロック化。
+ * * Update v5.13 Features:
+ * - 【UI改善】ログ編集モーダル（EditModal）の属性選択を2択（性別のみ）から4択（性別×個人/集団）に拡張。
+ * - これにより、記録後に「個人/集団」の属性を修正可能になりました。
+ * - (v5.12からの継承) AI機能のフラグ管理、PWA対応、スクロール制御などは維持。
  */
 
 // ▼▼▼▼▼▼▼▼▼▼ AI機能設定 ▼▼▼▼▼▼▼▼▼▼
@@ -404,7 +404,7 @@ const useTouchGesture = (isRecording: boolean, onActionDetermined: (gender: Gend
 };
 
 // ============================================================================
-// 4. Sub-Components (UI)
+// 3. Sub-Components (UI)
 // ============================================================================
 
 /**
@@ -446,7 +446,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
         const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
         return [
-          `# Shikakeology Data Export (v5.12)`,
+          `# Shikakeology Data Export (v5.13)`,
           `# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
           `# Session Start,${startTimeStr}`,
           `# Session End,${endTimeStr}`,
@@ -676,6 +676,14 @@ const EditModal: React.FC<{
     const [localNote, setLocalNote] = useState('');
     useEffect(() => { if (log) setLocalNote(log.note || ''); }, [log]);
     
+    // v5.13 Change: 属性選択肢の定義（性別×グループ）
+    const GENDER_GROUP_OPTIONS = [
+        { gender: 'Male', isGroup: false, label: '♂ Solo', color: 'bg-blue-100 border-blue-500 text-blue-800' },
+        { gender: 'Male', isGroup: true, label: '♂ Group', color: 'bg-blue-200 border-blue-600 text-blue-900' },
+        { gender: 'Female', isGroup: false, label: '♀ Solo', color: 'bg-rose-100 border-rose-500 text-rose-800' },
+        { gender: 'Female', isGroup: true, label: '♀ Group', color: 'bg-rose-200 border-rose-600 text-rose-900' },
+    ] as const;
+
     if (!log) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-opacity duration-300 animate-in fade-in">
@@ -685,14 +693,24 @@ const EditModal: React.FC<{
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
                 </div>
                 <div className="space-y-4">
-                    <div className="flex gap-2">
-                        {(['Male', 'Female'] as const).map(g => (
-                            <button key={g} onClick={() => onUpdate(log.id, { gender: g })}
-                                className={`flex-1 py-2 rounded border-2 font-bold transition-all active:scale-95 ${log.gender === g ? (g === 'Male' ? 'bg-blue-100 border-blue-500 text-blue-800' : 'bg-rose-100 border-rose-500 text-rose-800') : 'opacity-50'}`}>
-                                {g}
+                    {/* v5.13 Change: 4択の属性選択ボタン (2x2 Grid) */}
+                    <div className="grid grid-cols-2 gap-2">
+                        {GENDER_GROUP_OPTIONS.map((opt) => (
+                            <button
+                                key={`${opt.gender}-${opt.isGroup}`}
+                                onClick={() => onUpdate(log.id, { gender: opt.gender, isGroup: opt.isGroup })}
+                                className={`py-2 rounded border-2 font-bold transition-all active:scale-95 flex items-center justify-center gap-1
+                                    ${log.gender === opt.gender && log.isGroup === opt.isGroup 
+                                        ? opt.color 
+                                        : 'opacity-40 border-slate-200 bg-transparent text-slate-500 dark:border-slate-600 dark:text-slate-400'
+                                    }`}
+                            >
+                                {opt.label}
+                                {opt.isGroup && <Users size={14} />}
                             </button>
                         ))}
                     </div>
+
                      <div className="grid grid-cols-4 gap-2">
                         {(['Pass', 'Look', 'Stop', 'Use'] as const).map(act => (
                             <button key={act} onClick={() => onUpdate(log.id, { action: act })}
@@ -908,7 +926,7 @@ export default function App() {
       <header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
         <div>
             <div className="font-bold text-lg">行動記録ロガー</div>
-            <div className="text-[10px] font-mono opacity-50">Refactored v5.12</div>
+            <div className="text-[10px] font-mono opacity-50">Refactored v5.13</div>
         </div>
         <div className="flex gap-2">
             {uiState.mode === 'idle' && (
