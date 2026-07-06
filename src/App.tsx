@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle, Save, Power, Sparkles, Loader2 } from 'lucide-react';
+import { Download, Play, Square, RotateCcw, Settings, FileText, Trash2, Eye, Footprints, Hand, User, Moon, Volume2, Archive, History, CheckCircle, X, Users, Edit3, BookOpen, ExternalLink, Share, MoreVertical, Layers, MousePointer2, Smartphone, AlertTriangle, Save, Power, Sparkles, Loader2, Ambulance } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 /**
@@ -508,12 +508,17 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
 	return (
 	<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300 animate-in fade-in">
 		<div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 ${settings.darkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-800'}`}>
+
+
+
 		<div className={`p-4 border-b flex justify-between items-center ${settings.darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
 			<h2 className="font-bold text-lg flex items-center gap-2">
 			<BookOpen size={20} className="text-blue-500"/> ガイドブック
 			</h2>
 			<button onClick={onClose} className="p-1 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
 		</div>
+
+
 
 		<div className="flex border-b border-slate-200 dark:border-slate-700">
 			{[{ id: 'theory', label: '理論', icon: <Layers size={16}/> }, { id: 'usage', label: '使い方', icon: <MousePointer2 size={16}/> }, { id: 'install', label: 'PWA', icon: <Smartphone size={16}/> }].map(t => (
@@ -578,6 +583,8 @@ const GuideModal = ({ settings, onClose }: { settings: AppSettings, onClose: () 
 			</div>
 			)}
 		</div>
+
+
 		</div>
 	</div>
 	);
@@ -594,10 +601,10 @@ const EditModal: React.FC<{
 	useEffect(() => { if (log) setLocalNote(log.note || ''); }, [log]);
 	
 	const GENDER_GROUP_OPTIONS = [
-		{ gender: 'Male', isGroup: false, label: '♂ Solo', color: 'bg-blue-100 border-blue-500 text-blue-800' },
-		{ gender: 'Male', isGroup: true, label: '♂ Group', color: 'bg-blue-200 border-blue-600 text-blue-900' },
 		{ gender: 'Female', isGroup: false, label: '♀ Solo', color: 'bg-rose-100 border-rose-500 text-rose-800' },
+		{ gender: 'Male', isGroup: false, label: '♂ Solo', color: 'bg-blue-100 border-blue-500 text-blue-800' },
 		{ gender: 'Female', isGroup: true, label: '♀ Group', color: 'bg-rose-200 border-rose-600 text-rose-900' },
+		{ gender: 'Male', isGroup: true, label: '♂ Group', color: 'bg-blue-200 border-blue-600 text-blue-900' },
 	] as const;
 
 	if (!log) return null;
@@ -680,6 +687,21 @@ const SettingsPanel: React.FC<{
 					<button onClick={onClose} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={24}/></button>
 				</div>
 				<div className="space-y-6 pb-20 overflow-y-auto flex-1 overscroll-contain">
+
+		<button 
+						onClick={() => {
+							const data = JSON.stringify(localStorage);
+							navigator.clipboard.writeText(data)
+								.then(() => alert("コピー成功！メモ帳やLINEにペーストして送って！"))
+								.catch(() => prompt("自動コピーに失敗しました。下のテキストをコピーしてください:", data));
+						}} 
+						className="w-full py-4 rounded-xl font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 flex items-center justify-center gap-2 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors active:scale-95 transform"
+					>
+						<Ambulance size={20} className="text-red-500" /> 
+						データレスキュー！
+					</button>
+
+
 					<button onClick={onOpenGuide} className="w-full py-4 rounded-xl font-bold bg-slate-100 text-slate-800 flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors active:scale-95 transform"><BookOpen className="text-blue-500"/> ガイドブック</button>
 					<div>
 						<h3 className="font-bold border-b pb-2 mb-2">設定</h3>
@@ -773,10 +795,10 @@ export default function App() {
 	return (
 	<div className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none overscroll-none transition-colors duration-300 ${baseBg}`} onContextMenu={(e) => e.preventDefault()}>
 		<header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
-		<div className="font-bold text-lg">行動記録ロガー <span className="text-[10px] font-mono opacity-50">v5.16 High Contrast</span></div>
+		<div className="font-bold text-lg">行動記録ロガー <span className="text-[10px] font-mono opacity-50">v5.17</span></div>
 		<div className="flex gap-2">
-			{uiState.mode === 'idle' && <button onClick={() => {setUiState(p=>({...p,mode:'setup'})); trigger('open');}} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all"><Play size={18} /> 開始</button>}
-			{uiState.mode === 'recording' && <button onClick={() => {logger.stopSession();setUiState(p=>({...p,mode:'finishing'})); trigger('open');}} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-full font-bold shadow-md animate-pulse active:scale-95 transition-all"><Square size={18} /> 終了</button>}
+			{uiState.mode === 'idle' && <button onClick={() => {setUiState(p=>({...p,mode:'setup'})); trigger('open');}} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all whitespace-nowrap"><Play size={18} /> 開始</button>}
+			{uiState.mode === 'recording' && <button onClick={() => {logger.stopSession();setUiState(p=>({...p,mode:'finishing'})); trigger('open');}} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-full font-bold shadow-md animate-pulse active:scale-95 transition-all whitespace-nowrap"><Square size={18} /> 終了</button>}
 			<button onClick={() => setUiState(p => ({...p, isSettingsOpen: !p.isSettingsOpen}))} className="p-2 rounded-full hover:bg-slate-500/10 transition-colors"><Settings size={22} /></button>
 		</div>
 		</header>
