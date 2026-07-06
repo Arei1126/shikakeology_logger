@@ -21,6 +21,8 @@ const ENABLE_AI_FEATURES = true;
 // 1. Type Definitions & Constants
 // ============================================================================
 
+const AppVersion = "v5.18"
+
 type ActionType	= 'Pass' | 'Look' | 'Stop' | 'Use';
 type Gender	= 'Male' | 'Female';
 
@@ -412,7 +414,7 @@ const downloadCSV = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: st
 		const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
 
 		return [
-			`# Shikakeology Data Export (v5.16 High Contrast)`,
+			`# Shikakeology Data Export (${AppVersion})`,
 			`# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
 			`# Session Start,${startTimeStr}`,
 			`# Session End,${endTimeStr}`,
@@ -662,17 +664,54 @@ const SettingsPanel: React.FC<{
 }> = ({ isOpen, onClose, settings, setSettings, history, onDeleteHistory, onOpenGuide, onAnalyze }) => {
 	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
+
 	const downloadCSVInternal = (targetLogs: LogEntry[], targetInfo: SessionInfo, prefix: string) => {
-		const headers = ['ID', 'Timestamp_ISO', 'Timestamp_JST', 'UnixTime', 'Gender', 'Action', 'isGroup', 'Note'];
-		const rows = targetLogs.map(log => [
-			log.id, log.timestamp, new Date(log.unixTime).toLocaleString('ja-JP'), log.unixTime, 
-			log.gender, log.action, log.isGroup ? '1' : '0', `"${(log.note || '').replace(/"/g, '""')}"`
-		]);
-		const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+		const headers = [
+			'ID', 'Timestamp_ISO', 'Timestamp_JST', 'UnixTime', 
+			'Gender', 'Action_Raw', 'isGroup', 
+			'isMale', 'isFemale', 'isGroup_Dummy', 
+			'Passing(0)', 'Look(1)', 'Stop(2)', 'Use(3)',
+			'Note'
+		];
+		const rows = targetLogs.map(log => {
+			const jstDate = new Date(log.unixTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+			return [
+				log.id,
+				log.timestamp,
+				jstDate, 
+				log.unixTime,
+				log.gender,
+				log.action,
+				log.isGroup ? 'Group' : 'Individual',
+				log.gender === 'Male' ? '1' : '0',
+				log.gender === 'Female' ? '1' : '0',
+				log.isGroup ? '1' : '0',
+				log.isPass ? '1' : '0',
+				log.isLook ? '1' : '0',
+				log.isStop ? '1' : '0',
+				log.isUse ? '1' : '0',
+				`"${(log.note || '').replace(/"/g, '""')}"`
+			];
+		});
+
+		const startTimeStr = targetInfo.startTime ? new Date(targetInfo.startTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '';
+		const endTimeStr = targetInfo.endTime ? new Date(targetInfo.endTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '';
+		const sanitizedNote = (targetInfo.note || '').replace(/[\n\r,]/g, ' ');
+
+
+		const csvContent = [
+			`# Shikakeology Data Export (${AppVersion})`,
+			`# Export Date,${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
+			`# Session Start,${startTimeStr}`,
+			`# Session End,${endTimeStr}`,
+			`# Location,${targetInfo.location}`,
+			`# Note,${sanitizedNote}`,
+			`# Total Records,${targetLogs.length}`,
+		headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 		const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
 		const link = document.createElement('a');
 		link.href = URL.createObjectURL(blob);
-		link.download = `${prefix}_${Date.now()}.csv`;
+		link.download = `${prefix}_${sanitizeFileName(startTimeStr)}.csv`;
 		document.body.appendChild(link);
 		link.click();
 		document.body.removeChild(link);
@@ -795,7 +834,7 @@ export default function App() {
 	return (
 	<div className={`h-screen w-full flex flex-col font-sans overflow-hidden touch-none select-none overscroll-none transition-colors duration-300 ${baseBg}`} onContextMenu={(e) => e.preventDefault()}>
 		<header className={`px-4 py-2 flex justify-between items-center z-50 h-14 border-b ${darkMode ? 'bg-slate-900' : 'bg-white'} ${borderColor}`}>
-		<div className="font-bold text-lg">行動記録ロガー <span className="text-[10px] font-mono opacity-50">v5.17</span></div>
+		<div className="font-bold text-lg">行動記録ロガー <span className="text-[10px] font-mono opacity-50">{AppVersion}</span></div>
 		<div className="flex gap-2">
 			{uiState.mode === 'idle' && <button onClick={() => {setUiState(p=>({...p,mode:'setup'})); trigger('open');}} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-md active:scale-95 transition-all whitespace-nowrap"><Play size={18} /> 開始</button>}
 			{uiState.mode === 'recording' && <button onClick={() => {logger.stopSession();setUiState(p=>({...p,mode:'finishing'})); trigger('open');}} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-full font-bold shadow-md animate-pulse active:scale-95 transition-all whitespace-nowrap"><Square size={18} /> 終了</button>}
@@ -902,3 +941,27 @@ const TouchZone = ({ gender, isGroup, isRecording, onStart, onMove, onEnd, color
 	</div>
 	);
 };
+
+/**
+ * タイムスタンプ文字列をファイルシステムで安全な形式に変換する
+ * 
+ * @param {string} timestamp - 元となる文字列（例: "2026/7/6 21:26:31"）
+ * @returns {string} - 安全なファイル名文字列
+ */
+function sanitizeFileName(timestamp) {
+        // OSの禁則文字を定義する
+        // スラッシュやコロンなどはファイルシステム操作でエラーの原因となるため置換対象とする
+        const forbiddenChars = /[/:*?"<>|]/g;
+
+        // スペースもコマンドライン等でエスケープ処理が必要になるため、アンダースコアに置換して統一する
+        // 見た目のミニマリズムを意識してハイフンとアンダースコアで構成する
+        return timestamp
+                .replace(forbiddenChars, '-')
+                .replace(/\s+/g, '_');
+}
+
+// 実行例
+const rawTimestamp = "2026/7/6 21:26:31";
+const safeFileName = sanitizeFileName(rawTimestamp);
+
+console.log(safeFileName); // 出力: "2026-7-6_21-26-31"
