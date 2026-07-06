@@ -734,7 +734,7 @@ const SettingsPanel: React.FC<{
 								.then(() => alert("コピー成功！メモ帳やLINEにペーストして送って！"))
 								.catch(() => prompt("自動コピーに失敗しました。下のテキストをコピーしてください:", data));
 						}} 
-						className="w-full py-4 rounded-xl font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 flex items-center justify-center gap-2 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors active:scale-95 transform"
+						className="w-full py-4 rounded-xl font-bold bg-red-100 text-red-700  flex items-center justify-center gap-2 hover:bg-red-200  transition-colors active:scale-95 transform"
 					>
 						<Ambulance size={20} className="text-red-500" /> 
 						データレスキュー！
